@@ -1,0 +1,11 @@
+// LocalOverrides.xcconfig 示例文件（入库，作为模板）
+//
+// 使用方法：
+//   cp frontend/app/ios/Flutter/LocalOverrides.example.xcconfig \
+//      frontend/app/ios/Flutter/LocalOverrides.xcconfig
+// 然后把下面的 DEVELOPMENT_TEAM 改成你自己的 10 位 Team ID。
+//
+// LocalOverrides.xcconfig 已被 ios/.gitignore 忽略，不会提交。
+
+DEVELOPMENT_TEAM = 你的10位TeamID
+CODE_SIGN_STYLE = Automatic

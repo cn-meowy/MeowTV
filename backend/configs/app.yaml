@@ -1,0 +1,26 @@
+app:
+  name: meowTV
+  env: prod
+  debug: true
+
+server:
+  port: 8088
+  read_timeout: 60s     # 60s: tolerate slow origin m3u8 parsing in stream proxy
+  write_timeout: 0s     # 0=unlimited: required for io.Copy streaming TS segments from origin
+  idle_timeout: 120s    # keep-alive idle timeout, prevents connection leaks
+
+auth:
+  # ⚠️ 生产环境必须通过环境变量 MEOWTV_AUTH_JWT_SECRET 设置 JWT 密钥
+  # 不要在配置文件中设置明文密钥
+  jwt_secret: ""
+  access_ttl: 15m
+  refresh_ttl: 168h
+  kick_enabled: false
+  device_session_ttl: 30m
+
+log:
+  console: true
+  file: true
+  dir: "logs"
+  filename_prefix: "meowtv"
+  retention_days: 7

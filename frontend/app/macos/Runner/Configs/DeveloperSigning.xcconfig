@@ -1,0 +1,22 @@
+// ============================================================
+// Developer Signing Configuration
+// ============================================================
+//
+// 本地开发：保持 DEVELOPMENT_TEAM 为空即可（使用 ad-hoc 签名）
+// 正式发布：填入你的 Apple Developer Team ID，例如：
+//   DEVELOPMENT_TEAM = ABC123DEF4
+//
+// 查询你的 Team ID：
+//   1. 打开 Xcode -> Settings -> Accounts
+//   2. 选择你的 Apple ID -> 查看 Team ID
+//   或者终端运行：security find-identity -v -p codesigning
+// ============================================================
+
+// 留空表示本地开发不使用开发者证书签名
+DEVELOPMENT_TEAM =
+
+// 使用 ad-hoc 签名（本地调试）
+// CODE_SIGN_IDENTITY = "-" 表示使用 ad-hoc 签名，不需要开发者证书
+// Xcode 会自动对 app 和所有 embedded frameworks 执行 ad-hoc 签名
+CODE_SIGN_IDENTITY = -
+CODE_SIGN_STYLE = Automatic

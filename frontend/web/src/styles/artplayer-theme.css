@@ -1,0 +1,126 @@
+/**
+ * Artplayer 自定义主题 — 适配 MeowTV 主题系统
+ *
+ * 通过 CSS 叠加覆盖 Artplayer 默认样式，使其视觉融入 MeowTV 主题。
+ * 核心：进度条颜色、控制栏背景、按钮高亮色跟随 var(--theme-from)。
+ */
+
+/* ===== 播放器容器 ===== */
+.artplayer-app {
+  border-radius: var(--radius, 0.75rem) !important;
+  overflow: hidden;
+  font-family: var(--font-display, system-ui, sans-serif) !important;
+}
+
+/* ===== 进度条主题色 ===== */
+.art-control-progress {
+  /* 已播放部分 */
+  .art-progress-played {
+    background-color: var(--theme-from, #7c4dff) !important;
+  }
+
+  /* 缓冲部分 */
+  .art-progress-loaded {
+    background-color: rgba(255, 255, 255, 0.3) !important;
+  }
+
+  /* 进度指示点 */
+  .art-progress-hover {
+    background-color: var(--theme-from, #7c4dff) !important;
+  }
+
+  /* 拖拽手柄 */
+  .art-progress-indicator {
+    background-color: var(--theme-from, #7c4dff) !important;
+    border: 2px solid #fff !important;
+    box-shadow: 0 0 6px rgba(0, 0, 0, 0.4) !important;
+  }
+}
+
+/* ===== 控制栏 ===== */
+/* 不覆盖 .art-bottom 背景，Artplayer 自身已有渐变控制栏背景 */
+
+/* 控制栏按钮 hover 高亮 */
+.art-control:hover {
+  color: var(--theme-from, #7c4dff) !important;
+}
+
+.art-control-active {
+  color: var(--theme-from, #7c4dff) !important;
+}
+
+/* ===== 设置面板 ===== */
+.art-settings {
+  background: rgba(0, 0, 0, 0.9) !important;
+  backdrop-filter: blur(8px) !important;
+  border-radius: var(--radius, 0.75rem) !important;
+}
+
+.art-setting-item:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.art-setting-item-current {
+  color: var(--theme-from, #7c4dff) !important;
+}
+
+/* ===== 选择器面板 ===== */
+.art-selector {
+  background: rgba(0, 0, 0, 0.9) !important;
+  backdrop-filter: blur(8px) !important;
+  border-radius: var(--radius, 0.75rem) !important;
+}
+
+.art-selector-item:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.art-selector-item-current {
+  color: var(--theme-from, #7c4dff) !important;
+}
+
+/* ===== 右键菜单 ===== */
+.art-contextmenus {
+  background: rgba(0, 0, 0, 0.9) !important;
+  backdrop-filter: blur(8px) !important;
+  border-radius: var(--radius, 0.75rem) !important;
+}
+
+.art-contextmenu:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--theme-from, #7c4dff) !important;
+}
+
+/* ===== 提示信息 ===== */
+.art-notice {
+  background: rgba(0, 0, 0, 0.75) !important;
+  backdrop-filter: blur(4px) !important;
+  border-radius: calc(var(--radius, 0.75rem) / 2) !important;
+}
+
+/* ===== 迷你进度条 ===== */
+.art-mini-progress {
+  .art-mini-progress-played {
+    background-color: var(--theme-from, #7c4dff) !important;
+  }
+}
+
+/* ===== 弹幕相关 ===== */
+.art-danmuku {
+  /* 弹幕开关激活态 */
+  .art-control-active {
+    color: var(--theme-from, #7c4dff) !important;
+  }
+}
+
+/* ===== 音量条 ===== */
+.art-volume {
+  .art-volume-inner {
+    background-color: var(--theme-from, #7c4dff) !important;
+  }
+}
+
+/* ===== 全屏时圆角取消 ===== */
+.artplayer-app.art-fullscreen {
+  border-radius: 0 !important;
+}

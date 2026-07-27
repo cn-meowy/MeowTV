@@ -1,0 +1,42 @@
+# ============================================================
+# MeowTV Frontend Web Docker 构建上下文排除规则
+#
+# 构建上下文为 frontend/ 目录
+# ============================================================
+
+# macOS 系统文件
+.DS_Store
+*.DS_Store
+
+# IDE 配置
+*.iml
+*.idea/
+.vscode/
+
+# Flutter App 项目（Docker Linux 环境不需要）
+app/
+
+# Web 构建产物和缓存（重新构建时不需要带入镜像）
+web/dist/
+web/node_modules/
+web/.pnpm-store/
+web/.vite/
+web/tsconfig.tsbuildinfo
+web/tsconfig.node.tsbuildinfo
+
+# Git 版本控制
+.git/
+.gitignore
+.gitattributes
+
+# 文档
+plans/
+docs/
+web/ATTRIBUTIONS.md
+web/README.md
+
+# 其他不需要的文件
+*.md
+*.txt
+!web/package.json
+!web/pnpm-lock.yaml

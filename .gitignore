@@ -1,0 +1,17 @@
+/**/.idea/
+/backend/data/
+/frontend/web/node_modules/
+/**/*.iml
+/backend/vendor/
+/backend/logs/
+/**/plans/
+/tmp/
+/frontend/app/android/gradle-local.properties
+.venv/
+/**/.claude/
+/**/.kotlin/
+/frontend/apple-tv/
+/dist/
+.worktrees/
+/**/pkg/
+/**/.DS_Store

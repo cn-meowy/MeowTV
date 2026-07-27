@@ -1,0 +1,220 @@
+# ============================================================
+# MeowTV 后端配置模板
+# ============================================================
+#
+# 加载优先级（从高到低）：
+#   1. 命令行参数：-e <env> / --env <env>、-c <path> / --config <path>
+#   2. 环境变量：MEOWTV_* 前缀（如 MEOWTV_APP_DEBUG=true）
+#   3. 环境特定配置：app.<env>.yaml（如 app.prod.yaml）
+#   4. 基础配置：app.yaml
+#   5. 代码默认值（见下方各字段说明）
+#
+# 环境选择：
+#   - dev：使用 app.dev.yaml 中的覆盖值（调试模式开启）
+#   - prod：使用 app.prod.yaml 中的覆盖值（生产环境）
+#
+# 配置热重载：
+#   YAML 配置文件修改后需要重启服务生效。
+#   数据库中的 sys_config 表（动态配置）支持热更新，无需重启。
+#
+# ============================================================
+
+# ------------------------------------------------------------
+# 应用配置（app）
+# ------------------------------------------------------------
+app:
+  # 应用名称
+  # 类型：string
+  # 默认值：meowTV
+  name: "meowTV"
+
+  # 运行环境
+  # 类型：string
+  # 可选值：dev | prod
+  # 默认值：dev
+  # 说明：dev 环境开启调试模式，prod 环境关闭调试并强制校验 JWT 密钥
+  env: "dev"
+
+  # 调试模式
+  # 类型：boolean
+  # 默认值：true
+  # 说明：开启后 Echo 框架输出详细日志，生产环境应设为 false
+  debug: true
+
+# ------------------------------------------------------------
+# HTTP 服务器配置（server）
+# ------------------------------------------------------------
+server:
+  # HTTP 服务监听端口
+  # 类型：int
+  # 默认值：8080
+  port: 8088
+
+  # HTTP 请求读取超时
+  # 类型：duration（支持 10s、5m、1h 等格式）
+  # 默认值：10s
+  # 说明：客户端上传大文件时可适当调大
+  read_timeout: 10s
+
+  # HTTP 响应写入超时
+  # 类型：duration
+  # 默认值：10s
+  # 说明：长时间流式响应（如视频代理）时可适当调大
+  write_timeout: 10s
+
+# ------------------------------------------------------------
+# 数据库配置（db）
+# ------------------------------------------------------------
+db:
+  # 数据库驱动类型
+  # 类型：string
+  # 可选值：sqlite | mysql | postgres
+  # 默认值：sqlite
+  # 说明：当前代码仅完整实现了 SQLite，其他驱动需扩展 NewDB() 函数
+  driver: "sqlite"
+
+  # 数据源名称（Database Source Name）
+  # 类型：string
+  # 默认值：data/meowtv.db
+  # SQLite：文件路径，如 data/meowtv.db
+  # MySQL：user:password@tcp(host:3306)/dbname?charset=utf8mb4
+  # Postgres：host=localhost user=xxx password=xxx dbname=xxx sslmode=disable
+  dsn: "data/meowtv.db"
+
+# ------------------------------------------------------------
+# 缓存配置（cache）
+# ------------------------------------------------------------
+cache:
+  # 缓存类型
+  # 类型：string
+  # 可选值：gocache | ristretto | redis | multilevel
+  # 默认值：gocache
+  # 说明：
+  #   - gocache：进程内内存缓存，轻量，适合单机部署（当前实现完整）
+  #   - ristretto：高性能进程内缓存（待实现）
+  #   - redis：Redis 分布式缓存（待实现）
+  #   - multilevel：L1(gocache) + L2(redis) 多级缓存（待实现）
+  type: "gocache"
+
+  # 本地内存缓存配置（gocache / multilevel L1 层）
+  # 说明：仅在 cache.type 为 gocache 或 multilevel 时生效
+  local:
+    # 默认缓存 TTL（Time To Live）
+    # 类型：duration
+    # 默认值：30m
+    # 说明：缓存项未单独指定 TTL 时使用的默认过期时间
+    default_ttl: 30m
+
+    # 过期缓存清理间隔
+    # 类型：duration
+    # 默认值：10m
+    # 说明：gocache 后台 goroutine 定期清理过期项的间隔
+    cleanup_interval: 10m
+
+  # Redis 配置（redis / multilevel L2 层）
+  # 说明：仅在 cache.type 为 redis 或 multilevel 时生效
+  redis:
+    # Redis 服务器地址
+    # 类型：string
+    # 格式：host:port
+    # 示例：redis:6379、localhost:6379
+    addr: "redis:6379"
+
+    # Redis 认证密码
+    # 类型：string
+    # 默认值：（空，不认证）
+    # 说明：无密码时留空
+    password: ""
+
+    # Redis 数据库编号
+    # 类型：int
+    # 默认值：0
+    # 说明：Redis 支持 0-15 共 16 个数据库
+    db: 0
+
+# ------------------------------------------------------------
+# 认证配置（auth）
+# ------------------------------------------------------------
+auth:
+  # JWT 签名密钥
+  # 类型：string
+  # 默认值：change-me-in-production
+  # ⚠️ 重要：生产环境必须修改为随机强密钥，建议 32 字符以上
+  # 说明：用于签名和验证 JWT Token，密钥泄露可导致任意用户登录
+  # 生产环境校验：env=prod 时若仍为默认值，服务将拒绝启动
+  jwt_secret: "change-me-in-production"
+
+  # Access Token 有效期
+  # 类型：duration
+  # 默认值：15m
+  # 说明：短期访问令牌的有效期，到期后需使用 Refresh Token 续期
+  access_ttl: 15m
+
+  # Refresh Token 有效期
+  # 类型：duration
+  # 默认值：168h（7天）
+  # 说明：长期刷新令牌的有效期，用于获取新的 Access Token
+  refresh_ttl: 168h
+
+  # 是否启用多端登录踢人
+  # 类型：boolean
+  # 默认值：false
+  # 说明：开启后同一账号同时只能在一个设备登录，新登录会使旧设备 Token 失效
+  # 实现细节：失效 Token 的 JTI 会被加入内存黑名单（重启后失效）
+  kick_enabled: false
+
+  # 设备会话心跳超时
+  # 类型：duration
+  # 默认值：30m
+  # 说明：设备无请求超过此时间后标记为下线，session 缓存自然过期实现
+  device_session_ttl: 30m
+
+  # 初始管理员用户名
+  # 类型：string
+  # 默认值：admin
+  # 环境变量：MEOWTV_AUTH_ADMIN_USERNAME
+  # 说明：首次启动时自动创建的管理员用户名，仅当数据库中不存在管理员账户时生效
+  # admin_username: "admin"
+
+  # 初始管理员密码
+  # 类型：string（支持 ENC: 加密前缀）
+  # 默认值：admin123
+  # 环境变量：MEOWTV_AUTH_ADMIN_PASSWORD
+  # 说明：首次启动时自动创建的管理员密码，仅当数据库中不存在管理员账户时生效
+  #       生产环境强烈建议通过环境变量设置强密码，避免使用默认值
+  # admin_password: "admin123"
+
+# ------------------------------------------------------------
+# 日志配置（log）
+# ------------------------------------------------------------
+log:
+  # 是否输出到控制台
+  # 类型：boolean
+  # 默认值：true
+  # 说明：开启后日志输出到 stdout/stderr，容器环境建议开启
+  console: true
+
+  # 是否输出到文件
+  # 类型：boolean
+  # 默认值：true
+  # 说明：开启后日志输出到文件，支持按天自动轮转
+  file: true
+
+  # 日志文件目录
+  # 类型：string
+  # 默认值：logs
+  # 说明：相对于工作目录的路径，会自动创建目录
+  dir: "logs"
+
+  # 日志文件名前缀
+  # 类型：string
+  # 默认值：meowtv
+  # 说明：实际文件名格式为 <prefix>-<YYYY-MM-DD>.log
+  # 示例：meowtv-2026-06-11.log
+  filename_prefix: "meowtv"
+
+  # 日志文件保留天数
+  # 类型：int
+  # 默认值：7
+  # 说明：超过此天数的日志文件将被自动删除，设为 0 表示不清理
+  retention_days: 7

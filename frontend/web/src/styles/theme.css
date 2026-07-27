@@ -1,0 +1,311 @@
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --font-size: 16px;
+  --background: #0a0a12;
+  --foreground: #e8e8f0;
+  --card: rgba(18, 18, 32, 0.7);
+  --card-foreground: #e8e8f0;
+  --popover: rgba(14, 14, 26, 0.95);
+  --popover-foreground: #e8e8f0;
+  --primary: #7c4dff;
+  --primary-foreground: #ffffff;
+  --secondary: rgba(124, 77, 255, 0.12);
+  --secondary-foreground: #c4a8ff;
+  --muted: rgba(255, 255, 255, 0.06);
+  --muted-foreground: #8888aa;
+  --accent: rgba(124, 77, 255, 0.2);
+  --accent-foreground: #c4a8ff;
+  --destructive: #d4183d;
+  --destructive-foreground: #ffffff;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: transparent;
+  --input-background: rgba(255, 255, 255, 0.06);
+  --switch-background: #3a3a5c;
+  --font-weight-medium: 500;
+  --font-weight-normal: 400;
+  --ring: rgba(124, 77, 255, 0.4);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --radius: 0.75rem;
+  --sidebar: rgba(12, 12, 22, 0.8);
+  --sidebar-foreground: #e8e8f0;
+  --sidebar-primary: #7c4dff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(124, 77, 255, 0.15);
+  --sidebar-accent-foreground: #c4a8ff;
+  --sidebar-border: rgba(255, 255, 255, 0.06);
+  --sidebar-ring: rgba(124, 77, 255, 0.4);
+
+  /* Theme accent variables */
+  --theme-from: #7c4dff;
+  --theme-to: #b57bff;
+  --theme-mid: #9c6dff;
+  --theme-glow: rgba(124, 77, 255, 0.3);
+  --theme-subtle: rgba(124, 77, 255, 0.08);
+
+  /* ===== Semantic theme variables (dark mode defaults) ===== */
+  --bg-base: #080810;
+  --bg-surface: rgba(14, 14, 26, 0.6);
+  --bg-surface-strong: rgba(14, 14, 26, 0.8);
+  --bg-elevated: rgba(255, 255, 255, 0.04);
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-active: rgba(255, 255, 255, 0.08);
+
+  --text-primary: #e8e8f0;
+  --text-secondary: #8888aa;
+  --text-tertiary: #555;
+  --text-muted: rgba(255, 255, 255, 0.4);
+
+  --border-default: rgba(255, 255, 255, 0.06);
+  --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-strong: rgba(255, 255, 255, 0.1);
+
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.3);
+  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-dropdown: 0 16px 48px rgba(0, 0, 0, 0.7);
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+  --scrollbar-hover: rgba(255, 255, 255, 0.2);
+}
+
+.dark {
+  --background: #0a0a12;
+  --foreground: #e8e8f0;
+  --card: rgba(18, 18, 32, 0.7);
+  --card-foreground: #e8e8f0;
+  --popover: rgba(14, 14, 26, 0.95);
+  --popover-foreground: #e8e8f0;
+  --primary: #7c4dff;
+  --primary-foreground: #ffffff;
+  --secondary: rgba(124, 77, 255, 0.12);
+  --secondary-foreground: #c4a8ff;
+  --muted: rgba(255, 255, 255, 0.06);
+  --muted-foreground: #8888aa;
+  --accent: rgba(124, 77, 255, 0.2);
+  --accent-foreground: #c4a8ff;
+  --destructive: oklch(0.396 0.141 25.723);
+  --destructive-foreground: oklch(0.637 0.237 25.331);
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.06);
+  --ring: rgba(124, 77, 255, 0.4);
+  --sidebar: rgba(12, 12, 22, 0.8);
+  --sidebar-foreground: #e8e8f0;
+  --sidebar-primary: #7c4dff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(124, 77, 255, 0.15);
+  --sidebar-accent-foreground: #c4a8ff;
+  --sidebar-border: rgba(255, 255, 255, 0.06);
+  --sidebar-ring: rgba(124, 77, 255, 0.4);
+
+  /* Semantic variables — same as :root defaults, explicit for clarity */
+  --bg-base: #080810;
+  --bg-surface: rgba(14, 14, 26, 0.6);
+  --bg-surface-strong: rgba(14, 14, 26, 0.8);
+  --bg-elevated: rgba(255, 255, 255, 0.04);
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-active: rgba(255, 255, 255, 0.08);
+
+  --text-primary: #e8e8f0;
+  --text-secondary: #8888aa;
+  --text-tertiary: #555;
+  --text-muted: rgba(255, 255, 255, 0.4);
+
+  --border-default: rgba(255, 255, 255, 0.06);
+  --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-strong: rgba(255, 255, 255, 0.1);
+
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.3);
+  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-dropdown: 0 16px 48px rgba(0, 0, 0, 0.7);
+
+  --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+  --scrollbar-hover: rgba(255, 255, 255, 0.2);
+}
+
+.light {
+  --background: #f5f5f8;
+  --foreground: #1a1a2e;
+  --card: rgba(255, 255, 255, 0.85);
+  --card-foreground: #1a1a2e;
+  --popover: rgba(255, 255, 255, 0.95);
+  --popover-foreground: #1a1a2e;
+  --primary: #7c4dff;
+  --primary-foreground: #ffffff;
+  --secondary: rgba(124, 77, 255, 0.08);
+  --secondary-foreground: #6a5acd;
+  --muted: rgba(0, 0, 0, 0.06);
+  --muted-foreground: #5a5a78;
+  --accent: rgba(124, 77, 255, 0.12);
+  --accent-foreground: #6a5acd;
+  --destructive: #d4183d;
+  --destructive-foreground: #ffffff;
+  --border: rgba(0, 0, 0, 0.1);
+  --input: transparent;
+  --input-background: rgba(0, 0, 0, 0.04);
+  --switch-background: #cbced4;
+  --ring: rgba(124, 77, 255, 0.3);
+  --sidebar: rgba(240, 240, 245, 0.9);
+  --sidebar-foreground: #1a1a2e;
+  --sidebar-primary: #7c4dff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: rgba(124, 77, 255, 0.08);
+  --sidebar-accent-foreground: #6a5acd;
+  --sidebar-border: rgba(0, 0, 0, 0.06);
+  --sidebar-ring: rgba(124, 77, 255, 0.3);
+
+  /* Semantic variables — light mode */
+  --bg-base: #f5f5f8;
+  --bg-surface: rgba(255, 255, 255, 0.75);
+  --bg-surface-strong: rgba(255, 255, 255, 0.9);
+  --bg-elevated: rgba(0, 0, 0, 0.03);
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  --bg-active: rgba(0, 0, 0, 0.08);
+
+  --text-primary: #1a1a2e;
+  --text-secondary: #5a5a78;
+  --text-tertiary: #9999aa;
+  --text-muted: rgba(0, 0, 0, 0.4);
+
+  --border-default: rgba(0, 0, 0, 0.08);
+  --border-subtle: rgba(0, 0, 0, 0.04);
+  --border-strong: rgba(0, 0, 0, 0.15);
+
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.08);
+  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-dropdown: 0 16px 48px rgba(0, 0, 0, 0.15);
+
+  --scrollbar-thumb: rgba(0, 0, 0, 0.15);
+  --scrollbar-hover: rgba(0, 0, 0, 0.25);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-background: var(--input-background);
+  --color-switch-background: var(--switch-background);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Semantic color tokens for Tailwind */
+  --color-bg-base: var(--bg-base);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-surface-strong: var(--bg-surface-strong);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-hover: var(--bg-hover);
+  --color-bg-active: var(--bg-active);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-text-muted: var(--text-muted);
+  --color-border-default: var(--border-default);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    background: var(--bg-base);
+  }
+
+  html {
+    font-size: var(--font-size);
+  }
+
+  h1 {
+    font-size: var(--text-2xl);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  h2 {
+    font-size: var(--text-xl);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  h3 {
+    font-size: var(--text-lg);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  h4 {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  label {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  button {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  input {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-normal);
+    line-height: 1.5;
+  }
+
+  ::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 2px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-hover);
+  }
+}

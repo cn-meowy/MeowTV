@@ -1,0 +1,53 @@
+# ============================================================
+# MeowTV Frontend Docker 构建上下文排除规则
+#
+# 构建上下文为 frontend/ 目录
+# ============================================================
+
+# macOS 系统文件
+.DS_Store
+*.DS_Store
+
+# IDE 配置
+*.iml
+*.idea/
+.vscode/
+
+# 构建产物（不需要打包进镜像）
+app/build/
+app/.dart_tool/
+app/.flutter-plugins
+app/.flutter-plugins-dependencies
+app/.packages
+app/.flutter-uuid-cache.json
+
+# iOS 相关（Docker Linux 环境不需要）
+app/ios/
+app/macos/
+app/apple-tv/
+
+# Web 相关（如果不需要 Web 构建可以排除）
+app/web/
+
+# Windows 相关（如果不需要 Windows 构建可以排除）
+app/windows/
+
+# Linux 相关（如果不需要 Linux 构建可以排除）
+app/linux/
+
+# 测试文件（减小镜像体积）
+app/test/
+
+# 版本控制
+.git/
+.gitignore
+.gitattributes
+
+# 文档
+plans/
+docs/
+
+# 其他不需要的文件
+*.md
+*.txt
+!app/README.md

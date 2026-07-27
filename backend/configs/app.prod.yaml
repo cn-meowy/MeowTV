@@ -1,0 +1,27 @@
+app:
+  debug: false
+
+cache:
+  type: gocache
+  local:
+    default_ttl: 30m
+    cleanup_interval: 10m
+db:
+  driver: sqlite
+  dsn: "data/meowtv.db"
+
+# 认证配置（auth）
+# ⚠️ 生产环境重要提醒：
+#   - JWT 密钥必须通过环境变量 MEOWTV_AUTH_JWT_SECRET 设置
+#   - 初始管理员凭据必须通过环境变量设置：
+#     MEOWTV_AUTH_ADMIN_USERNAME
+#     MEOWTV_AUTH_ADMIN_PASSWORD
+auth:
+  jwt_secret: "${MEOWTV_AUTH_JWT_SECRET}"
+
+log:
+  console: true
+  file: true
+  dir: "logs"
+  filename_prefix: "meowtv"
+  retention_days: 30

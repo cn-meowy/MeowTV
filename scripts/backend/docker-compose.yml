@@ -1,0 +1,95 @@
+# ============================================================
+# MeowTV 后端 Docker Compose 配置
+#
+# 用法:
+#   docker compose up -d          # 启动服务
+#   docker compose down           # 停止服务
+#   docker compose logs -f        # 查看日志
+#   docker compose exec meowtv sh # 进入容器 shell
+#
+# 前提条件:
+#   - Docker 和 Docker Compose 已安装
+#   - backend/ 目录位于 docker-compose.yml 同级（见 volumes 路径）
+# ============================================================
+
+services:
+  meowtv:
+    image: xiaosheng078/meowtv:latest
+    container_name: meowtv
+    restart: unless-stopped
+
+    # 构建配置（当镜像不存在时从 Dockerfile 构建）
+    build:
+      context: ../../backend/
+      dockerfile: ../scripts/backend/Dockerfile
+
+    # 端口映射（默认 8088，可通过 MEOWTV_SERVER_PORT 覆盖）
+    ports:
+      - "${MEOWTV_PORT:-8088}:${MEOWTV_SERVER_PORT:-8088}"
+
+    # 卷挂载（bind mount，方便直接访问文件）
+    volumes:
+      # 配置文件目录
+      - ../../backend/configs:/app/configs:ro
+      # 数据目录（SQLite DB + 下载文件 + 图片缓存）
+      - ../../backend/data:/app/data
+      # 日志目录
+      - ../../backend/logs:/app/logs
+
+    # 环境变量配置
+    environment:
+      # 应用环境: dev | prod
+      - MEOWTV_APP_ENV=${MEOWTV_ENV:-prod}
+      # 调试模式（生产环境应关闭）
+      - MEOWTV_APP_DEBUG=${MEOWTV_DEBUG:-false}
+      # 服务端口（容器内部）
+      - MEOWTV_SERVER_PORT=${MEOWTV_SERVER_PORT:-8088}
+      # 日志配置
+      - MEOWTV_LOG_CONSOLE=true
+      - MEOWTV_LOG_FILE=true
+      - MEOWTV_LOG_DIR=/app/logs
+      # 数据库配置（使用默认 SQLite，data 目录已挂载）
+      # 如需其他数据库，取消注释并配置：
+      # - MEOWTV_DB_DRIVER=mysql
+      # - MEOWTV_DB_HOST=mysql
+      # - MEOWTV_DB_PORT=3306
+      # - MEOWTV_DB_DBNAME=meowtv
+      # - MEOWTV_DB_USER=meowtv
+      # - MEOWTV_DB_PASSWORD=your_password
+      # JWT 密钥（生产环境必须修改）
+      - MEOWTV_AUTH_JWT_SECRET=${MEOWTV_JWT_SECRET:-change-me-in-production}
+      # 加密密钥（用于加密敏感配置）
+      - MEOWTV_ENCRYPTION_KEY=${MEOWTV_ENCRYPTION_KEY:-}
+      # 管理员账户
+      - MEOWTV_AUTH_ADMIN_USERNAME=${MEOWTV_ADMIN_USERNAME:-admin}
+      - MEOWTV_AUTH_ADMIN_PASSWORD=${MEOWTV_ADMIN_PASSWORD:-admin123}
+      # Redis 配置（当前默认使用 gocache，无需 Redis）
+      # - MEOWTV_CACHE_TYPE=redis
+      # - MEOWTV_CACHE_REDIS_ADDR=redis:6379
+      # - MEOWTV_CACHE_REDIS_PASSWORD=
+
+    # 健康检查（与 Dockerfile HEALTHCHECK 配合）
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${MEOWTV_SERVER_PORT:-8088}/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # 网络配置
+#    networks:
+#      - meowtv-network
+
+    # 资源限制（可选，取消注释以启用）
+    # deploy:
+    #   resources:
+    #     limits:
+    #       cpus: '1.0'
+    #       memory: 512M
+    #     reservations:
+    #       cpus: '0.5'
+    #       memory: 256M
+
+networks:
+  meowtv-network:
+    driver: bridge

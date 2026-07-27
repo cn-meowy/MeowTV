@@ -1,0 +1,7 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+  <!-- 文件主体 -->
+  <path d="M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z"/>
+  <path d="M13 3v6h6"/>
+  <!-- 下载箭头：下载到文件 -->
+  <path d="M11 11v6M11 17l-2-2M11 17l2-2"/>
+</svg>

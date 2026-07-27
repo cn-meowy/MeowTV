@@ -1,0 +1,349 @@
+# ============================================================
+# MeowTV 动态配置参考模板（sys_config 表）
+# ============================================================
+#
+# 说明：
+#   - 本文件记录所有存储在数据库 sys_config 表中的动态配置项
+#   - 这些配置通过后台管理界面或 API 动态修改，无需重启服务即可生效
+#   - 修改某些配置会触发热更新回调（见下方「热更新」标注）
+#
+# 表结构：
+#   sys_config 表字段：
+#     - id：自增主键
+#     - config_key：配置唯一标识（全表唯一），如 douban_json_channel
+#     - config_group：配置分组，如 douban、resource_subscribe、system
+#     - title：配置项中文名称
+#     - title1~title6：各 value 字段的中文说明（仅用于前端展示）
+#     - value1~value6：各配置值（统一存储为 string，类型转换在代码中处理）
+#     - sort_order：排序权重，数字越小越靠前
+#     - is_enabled：是否启用（部分配置项可独立开关）
+#     - remark：备注说明
+#
+# 类型约定：
+#   - boolean 值使用字符串 "true" / "false"（代码中 parseBool 兼容 1/yes）
+#   - 整数值为字符串格式，如 "5"、"30"
+#   - JSON 数组直接存储为字符串，如 "[\"a\",\"b\"]"
+#
+# 热更新标注说明：
+#   🔥 标注的配置项修改后会触发服务内部回调，实现无需重启的热更新
+#   未标注的配置修改后需等待缓存过期（默认 5 分钟）自动生效
+#
+# ============================================================
+
+# ============================================================
+# 分组：douban（豆瓣数据相关配置）
+# ============================================================
+
+# ------------------------------------------------------------
+# 豆瓣 JSON 数据通道配置
+# config_key: douban_json_channel
+# 分组: douban
+# 说明: 控制如何请求豆瓣 JSON 接口，支持直连和 CORS 代理多通道切换
+# 热更新: 🔥 修改 channel 相关配置后立即生效（影响请求路由）
+# ------------------------------------------------------------
+douban_json_channel:
+  - config_key: "douban_json_channel"
+    config_group: "douban"
+    title: "豆瓣JSON数据通道"
+    title1: "直连地址"
+    title2: "备用CORS代理"
+    title3: "当前通道(1=直连,2=CORS代理)"
+    title4: "请求超时(秒)"
+    title5: "重试次数"
+    value1: "https://movie.douban.com"       # 直连地址，豆瓣官方域名
+    value2: "https://zwei.de"                # 备用 CORS 代理地址，用于绕过跨域限制
+    value3: "1"                               # 当前使用通道：1=直连，2=CORS代理
+    value4: "10"                              # 单次请求超时秒数，建议 5-30 秒
+    value5: "2"                               # 通道失败后重试次数，建议 1-3 次
+    sort_order: 1
+    is_enabled: true
+    remark: "通道1 直连豆瓣，需确保服务器能访问 douban.com；通道2 通过代理转发"
+
+# ------------------------------------------------------------
+# 图片分流节点配置
+# config_key: douban_image_node_img{1,2,3,9}
+# 分组: douban
+# 说明: 豆瓣图片 CDN 有多个域名节点，按用途分流可提高加载速度和稳定性
+# 每个节点用途不同：
+#   - img1：条目缩略小图、列表迷你封面
+#   - img2：小组、广播、动态中等尺寸配图
+#   - img3：高清大图、相册原图、剧照
+#   - img9：新版影视/图书条目标准封面（优先级最高）
+# 热更新: 🔥 修改节点配置后，下次图片请求立即使用新节点
+# ------------------------------------------------------------
+douban_image_node_img1:
+  - config_key: "douban_image_node_img1"
+    config_group: "douban"
+    title: "图片分流节点-img1"
+    title1: "节点前缀"
+    title2: "优先级"
+    title3: "用途说明"
+    title4: "启用"
+    value1: "https://img1.doubanio.com"       # 节点前缀 URL
+    value2: "1"                               # 优先级，数字越小越优先，99 表示最低优先级
+    value3: "条目缩略小图、列表迷你封面"        # 用途说明
+    value4: "true"                            # 是否启用：true / false
+    sort_order: 2
+    is_enabled: true
+    remark: ""
+
+douban_image_node_img2:
+  - config_key: "douban_image_node_img2"
+    config_group: "douban"
+    title: "图片分流节点-img2"
+    title1: "节点前缀"
+    title2: "优先级"
+    title3: "用途说明"
+    title4: "启用"
+    value1: "https://img2.doubanio.com"
+    value2: "2"
+    value3: "小组、广播、动态中等尺寸配图"
+    value4: "true"
+    sort_order: 3
+    is_enabled: true
+    remark: ""
+
+douban_image_node_img3:
+  - config_key: "douban_image_node_img3"
+    config_group: "douban"
+    title: "图片分流节点-img3"
+    title1: "节点前缀"
+    title2: "优先级"
+    title3: "用途说明"
+    title4: "启用"
+    value1: "https://img3.doubanio.com"
+    value2: "3"
+    value3: "高清大图、相册原图、剧照"
+    value4: "true"
+    sort_order: 4
+    is_enabled: true
+    remark: ""
+
+douban_image_node_img9:
+  - config_key: "douban_image_node_img9"
+    config_group: "douban"
+    title: "图片分流节点-img9"
+    title1: "节点前缀"
+    title2: "优先级"
+    title3: "用途说明"
+    title4: "启用"
+    value1: "https://img9.doubanio.com"
+    value2: "1"                               # img9 优先级与 img1 相同，均为最高优先级
+    value3: "新版影视/图书条目标准封面"
+    value4: "true"
+    sort_order: 5
+    is_enabled: true
+    remark: "新版封面域名，通常优先于 img1~img3"
+
+# ------------------------------------------------------------
+# 图片代理缓存配置
+# config_key: douban_image_proxy
+# 分组: douban
+# 说明: 控制豆瓣图片代理的本地缓存行为
+# 热更新: 🔥 修改缓存开关/目录后下次请求立即生效，清理间隔修改后等待下次触发
+# ------------------------------------------------------------
+douban_image_proxy:
+  - config_key: "douban_image_proxy"
+    config_group: "douban"
+    title: "图片代理配置"
+    title1: "启用图片缓存"
+    title2: "缓存目录"
+    title3: "缓存天数"
+    title4: "清理间隔(小时)"
+    title5: "分流节点白名单(JSON数组)"
+    value1: "true"                                              # 是否启用本地文件缓存
+    value2: "./data/douban_images"                              # 缓存文件存储目录，相对工作目录
+    value3: "7"                                                 # 缓存保留天数，超期文件会被清理
+    value4: "1"                                                 # 过期缓存清理任务执行间隔（小时）
+    value5: '["img.doubanio.com","img1.doubanio.com","img2.doubanio.com","img3.doubanio.com","img9.doubanio.com"]'
+    sort_order: 6
+    is_enabled: true
+    remark: "白名单限制只能代理豆瓣域名图片，提高安全性"
+
+# ------------------------------------------------------------
+# 豆瓣请求限流配置
+# config_key: douban_rate_limit
+# 分组: douban
+# 说明: 防止请求过于频繁被豆瓣封禁，分两部分限流：
+#   - 服务端 QPS：控制向豆瓣发起请求的速率（令牌桶）
+#   - 客户端限流：限制客户端每分钟请求次数（API 层）
+# ------------------------------------------------------------
+douban_rate_limit:
+  - config_key: "douban_rate_limit"
+    config_group: "douban"
+    title: "豆瓣请求限流"
+    title1: "每秒请求数(QPS)"
+    title2: "客户端每分钟请求上限"
+    value1: "5"                               # 服务端向豆瓣发起请求的每秒配额，建议 3-10
+    value2: "30"                              # 单个客户端（IP）每分钟最多请求次数，建议 20-60
+    sort_order: 7
+    is_enabled: true
+    remark: "QPS 控制全局，服务端共享；客户端限流按 IP 独立计数"
+
+# ------------------------------------------------------------
+# 豆瓣数据缓存配置
+# config_key: douban_cache
+# 分组: douban
+# 说明: 控制豆瓣 JSON 接口响应的缓存策略
+# ------------------------------------------------------------
+douban_cache:
+  - config_key: "douban_cache"
+    config_group: "douban"
+    title: "豆瓣数据缓存"
+    title1: "JSON缓存时长(分钟)"
+    title2: "启用JSON缓存"
+    value1: "30"                              # JSON 响应缓存时长（分钟），建议 10-60
+    value2: "true"                            # 是否启用 JSON 缓存
+    sort_order: 8
+    is_enabled: true
+    remark: "关闭后每次请求直接访问豆瓣，响应更实时但速度更慢"
+
+# ------------------------------------------------------------
+# 豆瓣榜单定时同步配置
+# config_key: douban_rank_sync
+# 分组: douban
+# 说明: 控制豆瓣榜单（分类列表、Tags）的自动定时同步功能
+# 热更新: 🔥 修改后自动重启 Cron 定时任务，无需手动干预
+# ------------------------------------------------------------
+douban_rank_sync:
+  - config_key: "douban_rank_sync"
+    config_group: "douban"
+    title: "豆瓣榜单同步配置"
+    title1: "启用自动同步"
+    title2: "Cron表达式"
+    title3: "数据保留日期数"
+    title4: "同步请求间隔(毫秒)"
+    title5: "同步每页条数"
+    value1: "true"                              # 是否启用自动同步
+    value2: "0 0 6 * * ?"                       # Cron 表达式，默认每天早上 6 点执行
+    value3: "2"                                  # 保留最近几天的数据，0 表示不清理
+    value4: "500"                                # 同步请求之间的间隔（毫秒），建议 200-1000
+    value5: "20"                                 # 每页请求的条数，建议 10-50
+    sort_order: 9
+    is_enabled: true
+    remark: "Cron 表达式格式：秒 分 时 日 月 周；? 表示不在意该字段"
+
+# ============================================================
+# 分组：resource_subscribe（资源订阅和代理相关配置）
+# ============================================================
+
+# ------------------------------------------------------------
+# 资源订阅配置
+# config_key: resource_subscribe
+# 分组: resource_subscribe
+# 说明: 控制影视资源站点的订阅拉取和自动更新
+# 热更新: 🔥 修改后自动重启订阅 Cron 定时任务
+# ------------------------------------------------------------
+resource_subscribe:
+  - config_key: "resource_subscribe"
+    config_group: "resource_subscribe"
+    title: "资源订阅配置"
+    title1: "订阅地址"
+    title2: "开启自动订阅"
+    title3: "Cron表达式"
+    value1: ""                                   # 订阅地址，支持 Base58 编码的 JSON 数据源
+    value2: "false"                             # 是否开启自动定时订阅
+    value3: "0 */6 * * * ?"                     # Cron 表达式，默认每 6 小时执行一次
+    sort_order: 1
+    is_enabled: true
+    remark: "订阅地址通常由影视资源站提供，格式为 JSON，Base58 编码后提供 URL"
+
+# ------------------------------------------------------------
+# 资源代理配置
+# config_key: resource_proxy
+# 分组: resource_subscribe
+# 说明: 控制订阅拉取和资源访问时的 HTTP 代理设置
+# ------------------------------------------------------------
+resource_proxy:
+  - config_key: "resource_proxy"
+    config_group: "resource_subscribe"
+    title: "资源代理配置"
+    title1: "代理协议"
+    title2: "代理地址"
+    title3: "代理端口"
+    title4: "认证用户名"
+    title5: "认证密码"
+    title6: "启用代理"
+    value1: "socks5"                             # 代理协议：socks5 | http
+    value2: "127.0.0.1"                         # 代理服务器地址
+    value3: "1080"                              # 代理端口号
+    value4: ""                                  # 认证用户名，无认证则留空
+    value5: ""                                  # 认证密码
+    value6: "false"                             # 是否启用代理
+    sort_order: 2
+    is_enabled: true
+    remark: "仅在启用代理时生效，用于访问被墙的影视资源站"
+
+# ------------------------------------------------------------
+# 代理连通性测试 URL
+# config_key: resource_proxy_test_url
+# 分组: resource_subscribe
+# 说明: 用于测试代理是否可用的目标 URL
+# ------------------------------------------------------------
+resource_proxy_test_url:
+  - config_key: "resource_proxy_test_url"
+    config_group: "resource_subscribe"
+    title: "代理测试URL"
+    title1: "测试URL"
+    value1: "http://www.gstatic.com/generate_204"
+    sort_order: 3
+    is_enabled: true
+    remark: "使用 Google 的 204 响应端点，HTTP/HTTPS 均可，确保代理可访问国际互联网"
+
+# ============================================================
+# 分组：system（系统级配置）
+# ============================================================
+
+# ------------------------------------------------------------
+# 下载服务配置
+# config_key: download_config
+# 分组: system
+# 说明: 控制视频下载任务的行为参数
+# 注意: 此配置项由下载服务首次运行时自动创建，无需手动添加
+# 默认值: 目录=data/downloads，最大并发=2，分片并发=10
+# ------------------------------------------------------------
+download_config:
+  - config_key: "download_config"
+    config_group: "system"
+    title: "下载配置"
+    title1: "下载目录"
+    title2: "最大并发下载数"
+    title3: "分片并发数"
+    value1: "data/downloads"                     # 下载完成的视频文件存放目录
+    value2: "2"                                  # 同时进行的最大下载任务数，建议 1-5
+    value3: "10"                                 # 单个任务的分片下载并发数，建议 5-20
+    sort_order: 0
+    is_enabled: true
+    remark: "分片并发数影响下载速度，但过高可能触发源站限速或被封禁 IP"
+
+# ============================================================
+# 分组：stream（流代理相关配置）
+# ============================================================
+
+# ------------------------------------------------------------
+# 流代理配置
+# config_key: stream_config
+# 分组: stream
+# 说明: 控制视频流代理的行为参数，包括前瞻窗口、并发控制和自动保存
+# 热更新: 🔥 修改配置后立即生效，无需重启服务
+# ------------------------------------------------------------
+stream_config:
+  - config_key: "stream_config"
+    config_group: "stream"
+    title: "流代理配置"
+    title1: "前瞻窗口大小"
+    title2: "通用协程数量"
+    title3: "总协程上限"
+    title4: "自动保存"
+    title5: "启用流代理"
+    title6: "最大磁盘缓存 MB"
+    value1: "20"                                 # 前瞻窗口大小（分片数），建议 10-30，影响缓冲体验
+    value2: "5"                                  # 通用协程数量，建议 3-10，用于普通用户下载
+    value3: "8"                                  # 总协程上限，建议 5-15，包含通用和专属协程
+    value4: "false"                             # 下载完成后是否自动转为下载任务保存
+    value5: "false"                             # 是否启用流代理服务
+    value5: "false"                             # 是否启用流代理服务
+    value6: "10240"                             # 最大磁盘缓存
+    sort_order: 1
+    is_enabled: true
+    remark: "前瞻窗口越大，缓冲体验越好但占用带宽越多；通用协程供普通下载使用，专属协程保障VIP用户"

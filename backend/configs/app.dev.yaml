@@ -1,0 +1,26 @@
+app:
+  debug: true
+
+db:
+  driver: sqlite
+  dsn: "data/meowtv.db"
+
+auth:
+  jwt_secret: "change-me-in-production"
+  access_ttl: 15m
+  refresh_ttl: 168h
+  kick_enabled: false
+  device_session_ttl: 30m
+
+cache:
+  type: gocache
+  local:
+    default_ttl: 30m
+    cleanup_interval: 10m
+
+log:
+  console: true
+  file: true
+  dir: "logs"
+  filename_prefix: "meowtv"
+  retention_days: 7
