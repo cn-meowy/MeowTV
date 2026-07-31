@@ -369,14 +369,22 @@ flutter run
 #### 方式一：拉取官方镜像运行（推荐）
 
 ```bash
+
 # 拉取镜像
 docker pull xiaosheng078/meowtv:latest
 
+## 环境准备
+# 复制默认配置文件 / 从源码获取上传
+docker run -d --name meowtv -e PUID=$(id -u) -e PGID=$(id -g) xiaosheng078/meowtv:latest && docker cp meowtv:/app/configs .
+# 清理临时容器
+docker stop meowtv && docker rm meowtv
+
 # 运行容器
-# --user 须与挂载目录属主一致；$(id -u):$(id -g) 在当前用户 shell 展开为字面量
+# PUID/PGID 须与宿主机用户一致；entrypoint 据此 chown 挂载目录并 gosu 降权，无需 --user
 docker run -d \
   --name meowtv \
-  --user $(id -u):$(id -g) \
+  -e PUID=$(id -u) \
+  -e PGID=$(id -g) \
   -p 8088:8088 \
   -v $(pwd)/configs:/app/configs:ro \
   -v $(pwd)/data:/app/data \
@@ -391,8 +399,8 @@ docker run -d \
 #### 方式二：Docker Compose
 
 Docker Compose 方式见 [`scripts/backend/docker-compose.yml`](scripts/backend/docker-compose.yml)（默认使用
-`xiaosheng078/meowtv:latest` 镜像）。该 compose 通过 `user: "${PUID}:${PGID}"` 设置运行用户，需保证 uid/gid
-与宿主机 bind mount 目录属主一致：
+`xiaosheng078/meowtv:latest` 镜像）。该 compose 通过 `PUID`/`PGID` 环境变量指定运行用户（默认 1000:1000，
+entrypoint 据此 chown 挂载目录并 `gosu` 降权），须与宿主机用户一致：
 
 ```bash
 cd scripts/backend

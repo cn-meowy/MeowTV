@@ -75,7 +75,7 @@ func main() {
 		slog.Error("failed to auto-migrate", "error", err)
 		os.Exit(1)
 	}
-	migration.SeedSysConfig(db)
+	migration.SeedSysConfig(db, cfg.Demo.LocalDataDir != "")
 
 	// Seed admin user if not exists
 	var count int64

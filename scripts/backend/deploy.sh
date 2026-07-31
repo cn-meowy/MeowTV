@@ -11,7 +11,8 @@
 #   sudo ./deploy.sh -e prod --uid $(id -u) --gid $(id -g)      # 指定环境（dev/prod）
 #   ./deploy.sh --help                                          # 显示帮助信息
 #
-#   ⚠️ --uid/--gid 必须显式传入，用于匹配宿主机 bind mount 目录属主。
+#   ⚠️ --uid/--gid 必须显式传入，用于指定容器内运行用户（PUID/PGID）。
+#      entrypoint 会据此 chown 挂载目录并 gosu 降权，须与宿主机用户一致。
 #      $(id -u)/$(id -g) 由调用方 shell 在 sudo 提权前展开为字面量。
 #      切勿写成 "sudo bash -c './deploy.sh --uid $(id -u) ...'"，
 #      否则 $(id -u) 在 root shell 内展开为 0，容器将以 root 运行。
@@ -39,8 +40,8 @@ ACTION="full"              # full | build | deploy
 PLATFORM=""                # amd64 | arm64 | 空（当前架构）
 ENVIRONMENT="prod"         # dev | prod
 IMAGE_NAME="xiaosheng078/meowtv:latest"
-RUN_UID=""                 # 运行用户 UID（须与宿主机 bind mount 目录属主一致）
-RUN_GID=""                 # 运行用户 GID（须与宿主机 bind mount 目录属主一致）
+RUN_UID=""                 # 运行用户 UID（entrypoint 据此 chown 挂载目录并降权，须与宿主机用户一致）
+RUN_GID=""                 # 运行用户 GID（entrypoint 据此 chown 挂载目录并降权，须与宿主机用户一致）
 
 # 颜色定义（使用 \033 格式，由 printf %b 解释）
 RED='\033[0;31m'
@@ -79,7 +80,7 @@ MeowTV 后端 Docker 部署脚本
     --full, -f        构建 + 部署（默认）
     --platform, -p    指定目标架构 (amd64 | arm64)，默认当前架构
     --env, -e         指定环境 (dev | prod)，默认 prod
-    --uid U           运行用户 UID（必须配合 --gid，用于匹配宿主机目录属主）
+    --uid U           运行用户 UID（必须配合 --gid，entrypoint 据此 chown 挂载目录并降权）
     --gid G           运行用户 GID（必须配合 --uid）
     --help, -h        显示此帮助信息
 
@@ -98,8 +99,8 @@ MeowTV 后端 Docker 部署脚本
     MEOWTV_JWT_SECRET  JWT 密钥（生产环境必须修改）
     MEOWTV_ADMIN_PASSWORD  管理员密码
 
-    运行用户必须通过 --uid/--gid 显式指定，须与宿主机 bind mount
-    目录属主一致，否则容器内进程无法写入挂载目录。
+    运行用户必须通过 --uid/--gid 显式指定，entrypoint 会据此 chown
+    挂载目录并 gosu 降权运行，须与宿主机用户一致以保证权限匹配。
 
 EOF
 }
@@ -205,7 +206,7 @@ check_env() {
 check_run_user() {
     # uid/gid 均不能为空
     if [ -z "${RUN_UID}" ] || [ -z "${RUN_GID}" ]; then
-        err "未指定运行用户。请用 sudo $0 --uid \$(id -u) --gid \$(id -g) 指定运行用户，以匹配宿主机 bind mount 目录属主"
+        err "未指定运行用户。请用 sudo $0 --uid \$(id -u) --gid \$(id -g) 指定运行用户（entrypoint 据此 chown 挂载目录并降权）"
         show_help
         exit 1
     fi
@@ -260,7 +261,7 @@ deploy_service() {
     export MEOWTV_ENV
     export MEOWTV_PORT
 
-    # 运行用户（传给 compose 的 user: "${PUID}:${PGID}"，须与宿主机 bind mount 目录属主一致）
+    # 运行用户（传给 compose 的 environment PUID/PGID，entrypoint 据此 chown 挂载目录并 gosu 降权）
     PUID="${RUN_UID}"
     PGID="${RUN_GID}"
     export PUID
