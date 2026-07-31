@@ -22,6 +22,15 @@ type Config struct {
 	Log        LogConfig        `mapstructure:"log"`
 	Encryption EncryptionConfig `mapstructure:"encryption"`
 	HTTPClient HTTPClientConfig `mapstructure:"http_client"`
+	Demo       DemoConfig       `mapstructure:"demo"`
+}
+
+// DemoConfig holds Apple Store review demo mode settings.
+// When LocalDataDir is non-empty, the backend scans that directory for local
+// video files and serves them through the existing MACCMS-compatible
+// search/detail/paginate interfaces, enabling offline review demonstrations.
+type DemoConfig struct {
+	LocalDataDir string `mapstructure:"local_data_dir"` // path to local video files directory
 }
 
 // AppConfig holds application-level settings.
@@ -129,7 +138,7 @@ func NewDB(cfg *DBConfig) (*gorm.DB, error) {
 	switch cfg.Driver {
 	case "sqlite":
 		if dsn == "" {
-			dsn = "data/meowtv.db"
+			dsn = "data/meowtv.db.bak"
 		}
 		db, err = gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 

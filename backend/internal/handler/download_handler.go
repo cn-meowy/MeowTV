@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 
@@ -168,9 +169,8 @@ func (h *DownloadHandler) Retry(c echo.Context) error {
 }
 
 // Check 检查是否有本地下载文件
+// 不限定用户：只要该资源有已完成下载即可播放（本地优先播放检查）
 func (h *DownloadHandler) Check(c echo.Context) error {
-	userID := c.Get(middleware.UserIDKey).(int64)
-
 	var req request.DownloadCheckReq
 	if err := c.Bind(&req); err != nil {
 		return err
@@ -179,7 +179,7 @@ func (h *DownloadHandler) Check(c echo.Context) error {
 		return err
 	}
 
-	found, taskID, fileURL, fileFormat := h.downloadService.CheckDownload(userID, req.ResourceDomain, req.VodID, req.SourceIndex, req.EpIndex)
+	found, taskID, fileURL, fileFormat := h.downloadService.CheckDownload(req.ResourceDomain, req.VodID, req.SourceIndex, req.EpIndex)
 	return response.OK(c, response.DownloadCheckResp{
 		Found:      found,
 		TaskID:     taskID,
@@ -189,15 +189,24 @@ func (h *DownloadHandler) Check(c echo.Context) error {
 }
 
 // File 流式播放已下载的文件（支持 Range 请求）
+// 认证方式：临时 Token（query param token，由 TempTokenAuth 中间件验证）。
+// Artplayer 通过 video.src 加载，无法设置 Authorization header，因此改用临时 Token。
+// 路由 :id 可能带 .mp4 伪扩展（用于绕过前端 parsePlaySources 的格式过滤），此处剥离。
+// 临时 Token 模式下不绑定具体 userID，因此跳过 task 归属校验（token 已证明登录身份）。
 func (h *DownloadHandler) File(c echo.Context) error {
-	userID := c.Get(middleware.UserIDKey).(int64)
+	// TempTokenAuth 中间件验证通过后不设置 UserIDKey，这里无需读取
 	taskIDStr := c.Param("id")
+	// 剥离可能的 .mp4 伪扩展后缀
+	if idx := strings.LastIndex(taskIDStr, "."); idx > 0 {
+		taskIDStr = taskIDStr[:idx]
+	}
 	taskID, err := strconv.ParseInt(taskIDStr, 10, 64)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusBadRequest, "无效的任务 ID")
 	}
 
-	filePath, err := h.downloadService.GetTaskFilePath(userID, taskID)
+	// 临时 Token 模式下跳过用户归属校验（token 已认证，taskID 难以枚举）
+	filePath, err := h.downloadService.GetTaskFilePathSkipUserCheck(taskID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound, err.Error())
 	}

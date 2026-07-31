@@ -373,12 +373,14 @@ flutter run
 docker pull xiaosheng078/meowtv:latest
 
 # 运行容器
+# --user 须与挂载目录属主一致；$(id -u):$(id -g) 在当前用户 shell 展开为字面量
 docker run -d \
   --name meowtv \
+  --user $(id -u):$(id -g) \
   -p 8088:8088 \
-  -v $(pwd)/backend/configs:/app/configs:ro \
-  -v $(pwd)/backend/data:/app/data \
-  -v $(pwd)/backend/logs:/app/logs \
+  -v $(pwd)/configs:/app/configs:ro \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
   -e MEOWTV_APP_ENV=prod \
   -e MEOWTV_AUTH_JWT_SECRET=your-secret-key \
   -e MEOWTV_AUTH_ADMIN_PASSWORD=your-password \
@@ -389,12 +391,22 @@ docker run -d \
 #### 方式二：Docker Compose
 
 Docker Compose 方式见 [`scripts/backend/docker-compose.yml`](scripts/backend/docker-compose.yml)（默认使用
-`xiaosheng078/meowtv:latest` 镜像）：
+`xiaosheng078/meowtv:latest` 镜像）。该 compose 通过 `user: "${PUID}:${PGID}"` 设置运行用户，需保证 uid/gid
+与宿主机 bind mount 目录属主一致：
 
 ```bash
 cd scripts/backend
+
+# 方式 A（推荐）：用部署脚本，自动传入当前用户 uid/gid
+sudo ./deploy.sh --uid $(id -u) --gid $(id -g)
+
+# 方式 B：直接 compose，需先 export PUID/PGID
+export PUID=$(id -u) PGID=$(id -g)
 docker compose up -d
 ```
+
+> ⚠️ `$(id -u)`/`$(id -g)` 必须由当前用户 shell 在 sudo 提权**前**展开为字面量。切勿写成
+> `sudo bash -c './deploy.sh --uid $(id -u) ...'`，那样会在 root shell 内展开为 0，导致容器以 root 运行。
 
 #### 方式三：自行构建
 
@@ -410,15 +422,15 @@ docker build -f scripts/backend/Dockerfile -t meowtv:latest backend/
 前端 Dockerfile 位于 [`scripts/frontend/web/Dockerfile`](scripts/frontend/web/Dockerfile)，使用 Nginx 运行静态产物。
 
 ```bash
-# 构建镜像（从项目根目录）
-docker build -f scripts/frontend/web/Dockerfile -t meowtv-web:latest frontend/
+# 拉取镜像
+docker pull xiaosheng078/meowtv-web:latest
 
 # 运行容器
 docker run -d \
   --name meowtv-web \
-  -p 80:80 \
+  -p 180:80 \
   -e API_BASE_URL=http://your-backend-host:8088 \
-  meowtv-web:latest
+  xiaosheng078/meowtv-web:latest
 ```
 
 ### 多架构构建

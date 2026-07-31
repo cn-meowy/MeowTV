@@ -234,8 +234,9 @@ func (s *DownloadService) RetryTask(userID, taskID int64) error {
 }
 
 // CheckDownload 检查是否有本地下载文件，返回 (found, taskID, fileURL, fileFormat)
-func (s *DownloadService) CheckDownload(userID int64, resourceDomain string, vodID int64, sourceIndex, epIndex int) (bool, int64, string, string) {
-	task, err := s.repo.FindCompleted(userID, resourceDomain, vodID, sourceIndex, epIndex)
+// 不限定用户：只要该资源有已完成下载即可播放（本地优先播放检查）
+func (s *DownloadService) CheckDownload(resourceDomain string, vodID int64, sourceIndex, epIndex int) (bool, int64, string, string) {
+	task, err := s.repo.FindCompleted(resourceDomain, vodID, sourceIndex, epIndex)
 	if err != nil {
 		return false, 0, "", ""
 	}
@@ -337,16 +338,34 @@ func (s *DownloadService) SaveFromStream(sessionKey string, segmentDir string, t
 	return taskID, nil
 }
 
-// GetTaskFilePath 获取任务文件路径（用于流式播放）
+// GetTaskFilePath 获取任务文件路径（用于流式播放，JWT 认证模式）
 // 如果文件是 TS 格式，尝试即时 remux 为 MP4（对遗留 TS 文件自动转封装并缓存）
 func (s *DownloadService) GetTaskFilePath(userID, taskID int64) (string, error) {
 	task, err := s.repo.GetByID(taskID)
 	if err != nil {
 		return "", err
 	}
-	if task.UserID != userID {
+	// Demo 模式：本地演示数据（UserID=0 且 ResourceDomain=local_demo_domain）跳过用户归属校验
+	if task.UserID != userID && !(task.UserID == DemoUserID && task.ResourceDomain == DemoDomain) {
 		return "", errs.New(http.StatusForbidden, "无权访问此文件")
 	}
+	return s.resolveFilePath(task)
+}
+
+// GetTaskFilePathSkipUserCheck 获取任务文件路径，跳过用户归属校验
+// 用于临时 Token 认证模式（/api/download/file/:id）：
+// 临时 Token 已由 TempTokenAuth 中间件验证登录身份，无需再校验 task.UserID。
+// taskID 为自增整数，难以枚举，且文件名信息有限，风险可控。
+func (s *DownloadService) GetTaskFilePathSkipUserCheck(taskID int64) (string, error) {
+	task, err := s.repo.GetByID(taskID)
+	if err != nil {
+		return "", err
+	}
+	return s.resolveFilePath(task)
+}
+
+// resolveFilePath 处理文件状态校验与 TS->MP4 即时 remux 的共享逻辑
+func (s *DownloadService) resolveFilePath(task *entity.DownloadTask) (string, error) {
 	if task.Status != entity.DownloadStatusCompleted {
 		return "", errs.New(http.StatusBadRequest, "文件尚未下载完成")
 	}
@@ -354,6 +373,7 @@ func (s *DownloadService) GetTaskFilePath(userID, taskID int64) (string, error) 
 		return "", errs.New(http.StatusBadRequest, "文件路径为空")
 	}
 
+	taskID := task.ID
 	// 即时 remux：如果文件是 TS 格式，尝试转封装为 MP4
 	if strings.HasSuffix(strings.ToLower(task.FilePath), ".ts") {
 		mp4Path := task.FilePath[:len(task.FilePath)-3] + ".mp4"

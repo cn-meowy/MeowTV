@@ -64,6 +64,10 @@ func Load(configPath string) (*Config, error) {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
+	// Bind MEOWTV_DEMO_DATA_DIR -> demo.local_data_dir
+	// (shorter, more memorable env var name for Apple Store review demo data)
+	v.BindEnv("demo.local_data_dir", "MEOWTV_DEMO_DATA_DIR")
+
 	// 6.5. Set encryption key from environment variable (before unmarshalling)
 	// Priority: env var > config file > empty
 	if encKeyEnv := os.Getenv(envEncryptionKey); encKeyEnv != "" {
@@ -146,7 +150,7 @@ func setDefaults(v *viper.Viper) {
 
 	// DB defaults (SQLite for development)
 	v.SetDefault("db.driver", "sqlite")
-	v.SetDefault("db.dsn", "data/meowtv.db")
+	v.SetDefault("db.dsn", "data/meowtv.db.bak")
 
 	// Cache defaults (go-cache for development)
 	v.SetDefault("cache.type", "gocache")

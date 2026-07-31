@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_constants.dart';
 import '../../core/logger/app_logger.dart';
+import '../../shared/models/admin_home.dart';
 import '../../shared/models/douban.dart';
 import '../settings/douban_image_proxy_provider.dart';
 
@@ -16,6 +17,9 @@ class HomeState {
   final List<DoubanSubject> hotTvSeries;
   final List<String> tags;
   final String currentTag;
+  /// 首页区块标题（来自后端 home_section_titles 配置，默认"最近添加"/"可能喜欢"）
+  final String sectionTitle1;
+  final String sectionTitle2;
   final bool isLoading;
   final String? error;
 
@@ -25,6 +29,8 @@ class HomeState {
     this.hotTvSeries = const [],
     this.tags = const [],
     this.currentTag = '热门',
+    this.sectionTitle1 = '最近添加',
+    this.sectionTitle2 = '可能喜欢',
     this.isLoading = false,
     this.error,
   });
@@ -35,6 +41,8 @@ class HomeState {
     List<DoubanSubject>? hotTvSeries,
     List<String>? tags,
     String? currentTag,
+    String? sectionTitle1,
+    String? sectionTitle2,
     bool? isLoading,
     Object? error = _homeUnset,
   }) =>
@@ -44,6 +52,8 @@ class HomeState {
         hotTvSeries: hotTvSeries ?? this.hotTvSeries,
         tags: tags ?? this.tags,
         currentTag: currentTag ?? this.currentTag,
+        sectionTitle1: sectionTitle1 ?? this.sectionTitle1,
+        sectionTitle2: sectionTitle2 ?? this.sectionTitle2,
         isLoading: isLoading ?? this.isLoading,
         error: identical(error, _homeUnset) ? this.error : error as String?,
       );
@@ -123,6 +133,30 @@ class HomeNotifier extends StateNotifier<HomeState> {
       firstError ??= e.toString();
     }
 
+    // 首页区块标题配置（失败时保留默认值，不阻塞首页数据加载）
+    String sectionTitle1 = '最近添加';
+    String sectionTitle2 = '可能喜欢';
+    try {
+      final resp = await _api.post<Map<String, dynamic>>(
+        ApiConstants.userConfigList,
+        data: {'group': 'home'},
+      );
+      final list = resp.data?['data'] as List<dynamic>?;
+      if (list != null) {
+        for (final e in list) {
+          final item = e as Map<String, dynamic>;
+          if (item['config_key'] == 'home_section_titles') {
+            final cfg = HomeSectionConfig.fromConfigItem(item);
+            sectionTitle1 = cfg.sectionTitle1;
+            sectionTitle2 = cfg.sectionTitle2;
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      appLogger.w('Failed to load home section titles: $e');
+    }
+
     if (!mounted) {
       _isLoadingData = false;
       return;
@@ -133,6 +167,8 @@ class HomeNotifier extends StateNotifier<HomeState> {
       hotMovies: movies,
       hotTvSeries: tvSeries,
       tags: tags,
+      sectionTitle1: sectionTitle1,
+      sectionTitle2: sectionTitle2,
       isLoading: false,
       error: firstError,
     );

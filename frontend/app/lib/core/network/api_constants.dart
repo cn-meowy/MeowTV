@@ -16,6 +16,8 @@ class ApiConstants {
   static const userPassword = '/api/user/password';
   static const userDevices = '/api/user/devices';
   static const userKickDevice = '/api/user/kick-device';
+  // 普通用户只读系统配置（复用 AdminConfig.List handler，router.go 注册于 /api/user/config/list）
+  static const userConfigList = '/api/user/config/list';
 
   // ---------- Resource ----------
   static const resourceSites = '/api/resource/sites';

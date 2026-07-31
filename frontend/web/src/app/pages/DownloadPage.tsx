@@ -6,7 +6,7 @@ import { useThemeStore } from "@/stores/theme";
 import { THEMES } from "@/app/components/Navbar";
 import { GradientText } from "@/app/components/GradientText";
 import { useDownloadTasks, getStatusLabel, isTerminalStatus, formatFileSize } from "@/hooks/useDownload";
-import { cancelDownload, deleteDownload, retryDownload, getDownloadFileUrl } from "@/api/download";
+import { cancelDownload, deleteDownload, retryDownload } from "@/api/download";
 import { ApiError } from "@/api/client";
 import type { DownloadTaskItem, DownloadStatus } from "@/types/api";
 

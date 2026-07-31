@@ -501,15 +501,24 @@ class _UserGroupSubTabState extends ConsumerState<_UserGroupSubTab> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final groups = ref.watch(adminProvider).groups;
-    return RefreshIndicator(
-      onRefresh: () => ref.read(adminProvider.notifier).fetchGroupList(),
-      child: groups.isEmpty
-          ? _emptyState(colors)
-          : ListView.builder(
-              padding: const EdgeInsets.all(AppTheme.md),
-              itemCount: groups.length,
-              itemBuilder: (_, i) => _groupCard(groups[i], colors),
-            ),
+    return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        backgroundColor: colors.primary,
+        foregroundColor: colors.textInverse,
+        mini: true,
+        child: const Icon(Icons.group_add),
+        onPressed: () => _showCreateGroupDialog(),
+      ),
+      body: RefreshIndicator(
+        onRefresh: () => ref.read(adminProvider.notifier).fetchGroupList(),
+        child: groups.isEmpty
+            ? _emptyState(colors)
+            : ListView.builder(
+                padding: const EdgeInsets.all(AppTheme.md),
+                itemCount: groups.length,
+                itemBuilder: (_, i) => _groupCard(groups[i], colors),
+              ),
+      ),
     );
   }
 

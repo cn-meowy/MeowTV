@@ -163,6 +163,31 @@ func SeedSysConfig(db *gorm.DB) {
 			SortOrder: 1,
 			IsEnabled: true,
 		},
+		// --- 首页区块标题配置 ---
+		{
+			ConfigKey:   "home_section_titles",
+			ConfigGroup: "home",
+			Title:       "首页区块标题",
+			Title1:      "区块一标题", Value1: "热门影视",
+			Title2: "区块二标题", Value2: "热播剧集",
+			SortOrder: 1,
+			IsEnabled: true,
+		},
+		// --- 本地演示资源站点（Apple Store 审核演示模式，demo 模式自动启用） ---
+		{
+			ConfigKey:   "local_demo_domain",
+			ConfigGroup: "resource_site",
+			Title:       "本地演示资源",
+			Value1:      "local://demo",
+			Value2:      "local://demo",
+			Value3:      "Apple Store 审核演示本地数据",
+			Value4:      "0",
+			Value5:      "0", // 非NSFW
+			Value6:      "1", // 允许搜索
+			SortOrder:   999,
+			IsEnabled:   true,
+			Remark:      "本地演示虚拟站点，数据来自 MEOWTV_DEMO_DATA_DIR 扫描",
+		},
 	}
 
 	seeded := 0

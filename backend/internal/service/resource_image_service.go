@@ -40,8 +40,16 @@ func NewResourceImageService(configSvc *SysConfigService, c cache.Cache) *Resour
 
 // ProxyImage 代理资源站图片请求
 // URL 格式: /api/resource/image/proxy?url=xxx
+// 支持两种 URL：
+//   - HTTP/HTTPS 远程图片（走代理 + 缓存 + 重试 + 完整性校验）
+//   - 本地文件绝对路径（demo 模式封面，直接读取返回，不走缓存）
 func (s *ResourceImageService) ProxyImage(c echo.Context, imageURL string) error {
 	ctx := c.Request().Context()
+
+	// 0. 本地文件路径：demo 模式封面图片直接读取返回
+	if isLocalFilePath(imageURL) {
+		return s.serveLocalImage(c, imageURL)
+	}
 
 	// 1. 校验 URL 合法性
 	if err := s.validateImageURL(imageURL); err != nil {
@@ -79,6 +87,49 @@ func (s *ResourceImageService) ProxyImage(c echo.Context, imageURL string) error
 	c.Response().Header().Set("Cache-Control", "public, max-age=86400")
 	c.Response().Header().Set("X-Image-Cache", "MISS")
 	return c.Blob(http.StatusOK, contentType, imageData)
+}
+
+// isLocalFilePath 判断 imageURL 是否为本地文件路径。
+// demo 模式下 vod_pic 存储的是封面图片的绝对路径（如 /path/to/movie.jpg），
+// 当该路径对应文件确实存在时，按本地文件处理。
+func isLocalFilePath(imageURL string) bool {
+	if imageURL == "" {
+		return false
+	}
+	// 排除明显的 URL（带 scheme 的 http/https）
+	if strings.HasPrefix(imageURL, "http://") || strings.HasPrefix(imageURL, "https://") {
+		return false
+	}
+	// 仅当文件存在时才视为本地路径，避免误判普通字符串
+	if info, err := os.Stat(imageURL); err == nil && !info.IsDir() {
+		return true
+	}
+	return false
+}
+
+// serveLocalImage 读取本地图片文件并返回，不走缓存逻辑。
+func (s *ResourceImageService) serveLocalImage(c echo.Context, imagePath string) error {
+	data, err := os.ReadFile(imagePath)
+	if err != nil {
+		return errs.WithMsg(fmt.Sprintf("读取本地图片失败: %v", err), errs.ErrNotFound)
+	}
+
+	// 根据扩展名推断 Content-Type
+	contentType := "image/jpeg"
+	ext := strings.ToLower(filepath.Ext(imagePath))
+	switch ext {
+	case ".png":
+		contentType = "image/png"
+	case ".webp":
+		contentType = "image/webp"
+	case ".gif":
+		contentType = "image/gif"
+	}
+
+	c.Response().Header().Set("Content-Type", contentType)
+	c.Response().Header().Set("Cache-Control", "public, max-age=86400")
+	c.Response().Header().Set("X-Image-Source", "LOCAL")
+	return c.Blob(http.StatusOK, contentType, data)
 }
 
 // validateImageURL 校验图片 URL 合法性

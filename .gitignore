@@ -10,8 +10,9 @@
 .venv/
 /**/.claude/
 /**/.kotlin/
-/frontend/apple-tv/
+/frontend/apple-tv
 /dist/
 .worktrees/
 /**/pkg/
 /**/.DS_Store
+

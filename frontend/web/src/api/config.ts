@@ -6,9 +6,14 @@ import type {
   SubscribeFetchResp,
 } from '@/types/api';
 
-/** 获取配置列表（按 group） */
+/** 获取配置列表（按 group，管理员） */
 export function getConfigList(req: ConfigListReq): Promise<ConfigListResp> {
   return post<ConfigListResp>(API.ADMIN_CONFIG_LIST, req as unknown as Record<string, unknown>);
+}
+
+/** 获取配置列表（按 group，普通用户只读） */
+export function getUserConfigList(req: ConfigListReq): Promise<ConfigListResp> {
+  return post<ConfigListResp>(API.USER_CONFIG_LIST, req as unknown as Record<string, unknown>);
 }
 
 /** 创建配置项 */

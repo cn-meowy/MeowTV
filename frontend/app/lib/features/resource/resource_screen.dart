@@ -102,7 +102,9 @@ class _ResourceScreenState extends ConsumerState<ResourceScreen> {
               ),
 
             // ─── Resource Site Tags ──────────────────────────────────────
-            if (state.sites.isNotEmpty) _buildSiteTags(state),
+            // 仅当存在多个资源站点时才显示站点标签栏，
+            // 单一站点时无需切换，直接隐藏整块 UI。
+            if (state.sites.length > 1) _buildSiteTags(state),
 
             // ─── Content Area ───────────────────────────────────────────
             Expanded(child: _buildContent(state)),

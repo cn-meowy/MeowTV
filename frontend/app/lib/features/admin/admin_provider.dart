@@ -9,6 +9,7 @@ import '../../shared/models/admin_group.dart';
 import '../../shared/models/admin_download.dart';
 import '../../shared/models/admin_subscribe.dart';
 import '../../shared/models/admin_stream.dart';
+import '../../shared/models/admin_home.dart';
 import 'admin_state.dart';
 
 class AdminNotifier extends StateNotifier<AdminState> {
@@ -379,6 +380,50 @@ class AdminNotifier extends StateNotifier<AdminState> {
       return true;
     } catch (e) {
       appLogger.e('保存流代理配置失败', error: e);
+      return false;
+    }
+  }
+
+  // ── Home Section Config ───────────────────────────────────────────────
+
+  /// 拉取首页区块标题配置（config_group = "home"）
+  Future<void> fetchHomeConfig() async {
+    if (!mounted) return;
+    state = state.copyWith(loading: true, error: null);
+    try {
+      final resp = await _api.post<Map<String, dynamic>>(
+          ApiConstants.adminConfigList, data: {'group': 'home'});
+      if (!mounted) return;
+      final data = _extractData(resp.data!);
+      if (data is List) {
+        for (final e in data) {
+          final item = e as Map<String, dynamic>;
+          final key = item['config_key'] as String? ?? '';
+          if (key == 'home_section_titles') {
+            state = state.copyWith(
+                homeConfig: HomeSectionConfig.fromConfigItem(item));
+            break;
+          }
+        }
+      }
+    } catch (e) {
+      appLogger.e('获取首页区块标题配置失败', error: e);
+      if (!mounted) return;
+      state = state.copyWith(error: '获取首页区块标题配置失败: $e');
+    } finally {
+      if (mounted) state = state.copyWith(loading: false);
+    }
+  }
+
+  /// 保存首页区块标题配置
+  Future<bool> saveHomeConfig(HomeSectionConfig c) async {
+    try {
+      await _api.post(ApiConstants.adminConfigUpdate, data: c.toUpdateBody());
+      if (!mounted) return true;
+      state = state.copyWith(homeConfig: c);
+      return true;
+    } catch (e) {
+      appLogger.e('保存首页区块标题配置失败', error: e);
       return false;
     }
   }

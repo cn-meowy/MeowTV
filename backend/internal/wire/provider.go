@@ -39,3 +39,8 @@ func ProvideCacheConfig(cfg *config.Config) *config.CacheConfig {
 func ProvideAppConfig(cfg *config.Config) *config.AppConfig {
 	return &cfg.App
 }
+
+// ProvideDemoLocalDataDir 从 Config 提取 demo 模式的本地数据目录路径
+func ProvideDemoLocalDataDir(cfg *config.Config) string {
+	return cfg.Demo.LocalDataDir
+}

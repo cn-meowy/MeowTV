@@ -92,6 +92,11 @@ func (r *DownloadRepository) Delete(id int64) error {
 	return r.db.Where("id = ?", id).Delete(&entity.DownloadTask{}).Error
 }
 
+// DeleteByDomain 删除指定 resource_domain 的所有下载任务（用于清理 demo 数据）
+func (r *DownloadRepository) DeleteByDomain(domain string) error {
+	return r.db.Where("resource_domain = ?", domain).Delete(&entity.DownloadTask{}).Error
+}
+
 // FindExisting 查找用户已存在的下载任务（同 m3u8_url 且状态非终态）
 func (r *DownloadRepository) FindExisting(userID int64, m3u8URL string) (*entity.DownloadTask, error) {
 	var task entity.DownloadTask
@@ -105,12 +110,13 @@ func (r *DownloadRepository) FindExisting(userID int64, m3u8URL string) (*entity
 	return &task, nil
 }
 
-// FindCompleted 查找用户已完成的下载任务（用于本地视频优先播放检查）
-func (r *DownloadRepository) FindCompleted(userID int64, resourceDomain string, vodID int64, sourceIndex, epIndex int) (*entity.DownloadTask, error) {
+// FindCompleted 查找已完成的下载任务（用于本地视频优先播放检查）
+// 不限定 user_id：只要该资源（domain+vod_id+source+ep）有已完成下载，任意登录用户均可播放。
+func (r *DownloadRepository) FindCompleted(resourceDomain string, vodID int64, sourceIndex, epIndex int) (*entity.DownloadTask, error) {
 	var task entity.DownloadTask
-	err := r.db.Where("user_id = ? AND resource_domain = ? AND vod_id = ? AND source_index = ? AND ep_index = ? AND status = ?",
-		userID, resourceDomain, vodID, sourceIndex, epIndex, entity.DownloadStatusCompleted,
-	).First(&task).Error
+	err := r.db.Where("resource_domain = ? AND vod_id = ? AND source_index = ? AND ep_index = ? AND status = ?",
+		resourceDomain, vodID, sourceIndex, epIndex, entity.DownloadStatusCompleted,
+	).Order("created_at DESC").First(&task).Error
 	if err != nil {
 		return nil, err
 	}

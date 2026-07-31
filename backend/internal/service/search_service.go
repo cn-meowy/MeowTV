@@ -17,6 +17,7 @@ import (
 	"cn.meow/meowtv/internal/model/dto/request"
 	"cn.meow/meowtv/internal/model/dto/response"
 	"cn.meow/meowtv/internal/model/entity"
+	"cn.meow/meowtv/internal/repository"
 	"cn.meow/meowtv/internal/util"
 )
 
@@ -81,19 +82,23 @@ type siteInfo struct {
 
 // SearchService 聚合搜索业务层
 type SearchService struct {
-	configService *SysConfigService
-	groupService  *UserGroupService
-	cache         cache.Cache
-	httpClient    *http.Client
+	configService  *SysConfigService
+	groupService   *UserGroupService
+	cache          cache.Cache
+	httpClient     *http.Client
+	localVideoRepo *repository.LocalVideoRepository
+	localDataSvc   *LocalDataService
 }
 
 // NewSearchService 创建聚合搜索 Service
-func NewSearchService(configService *SysConfigService, groupService *UserGroupService, c cache.Cache) *SearchService {
+func NewSearchService(configService *SysConfigService, groupService *UserGroupService, c cache.Cache, localVideoRepo *repository.LocalVideoRepository, localDataSvc *LocalDataService) *SearchService {
 	return &SearchService{
-		configService: configService,
-		groupService:  groupService,
-		cache:         c,
-		httpClient:    &http.Client{Timeout: 30 * 1e9}, // 30s
+		configService:  configService,
+		groupService:   groupService,
+		cache:          c,
+		httpClient:     &http.Client{Timeout: 30 * 1e9}, // 30s
+		localVideoRepo: localVideoRepo,
+		localDataSvc:   localDataSvc,
 	}
 }
 
@@ -339,6 +344,11 @@ func (s *SearchService) concurrentSearch(ctx context.Context, sites []*siteInfo,
 func (s *SearchService) searchSite(ctx context.Context, site *siteInfo, keyword, doubanID string, eventCh chan<- searchEvent, mu *sync.Mutex) int {
 	slog.Info("search site start", "domain", site.Domain, "keyword", keyword)
 
+	// Demo 模式：本地演示站点走数据库查询
+	if s.isLocalDemoSite(site.Domain) {
+		return s.searchLocalSite(ctx, site, keyword, eventCh, mu)
+	}
+
 	// 1. 先查缓存
 	queryHash := hashQuery(keyword)
 	ck := cache.KeyResourceSearch(site.Domain, queryHash)
@@ -531,6 +541,11 @@ func (s *SearchService) Detail(ctx context.Context, userID int64, role int8, req
 		return nil, err
 	}
 
+	// Demo 模式：本地演示站点走数据库查询
+	if s.isLocalDemoSite(siteInfo.Domain) {
+		return s.getLocalDetail(ctx, siteInfo, req.VodID)
+	}
+
 	// 2. 先查缓存
 	ck := cache.KeyResourceDetail(siteInfo.Domain, req.VodID)
 	if cached, err := s.cache.Get(ctx, ck.Key); err == nil && cached != "" {
@@ -669,6 +684,11 @@ func (s *SearchService) Paginate(ctx context.Context, userID int64, role int8, r
 		return nil, err
 	}
 
+	// Demo 模式：本地演示站点走数据库查询
+	if s.isLocalDemoSite(allowedSite.Domain) {
+		return s.getLocalPaginate(ctx, allowedSite, req.Page, req.PageSize, req.Keyword)
+	}
+
 	// 2. 构建 MacCMS API 请求 URL
 	paginateURL := fmt.Sprintf("%s?ac=detail&pg=%d&pagesize=%d", strings.TrimRight(allowedSite.DetailURL, "/"), req.Page, req.PageSize)
 	if req.Keyword != "" {
@@ -744,4 +764,117 @@ func (s *SearchService) Paginate(ctx context.Context, userID int64, role int8, r
 		PageSize:   req.PageSize,
 		TotalPages: totalPages,
 	}, nil
+}
+
+// --- Demo 模式：本地数据查询 ---
+
+// isLocalDemoSite 判断站点是否为本地演示虚拟站点
+func (s *SearchService) isLocalDemoSite(domain string) bool {
+	return s.localDataSvc != nil && s.localDataSvc.IsDemoMode() && domain == DemoDomain
+}
+
+// searchLocalSite 从本地 local_video 表搜索并推送结果
+func (s *SearchService) searchLocalSite(ctx context.Context, site *siteInfo, keyword string, eventCh chan<- searchEvent, mu *sync.Mutex) int {
+	videos, err := s.localVideoRepo.SearchByKeyword(keyword)
+	if err != nil {
+		slog.Error("search local videos failed", "keyword", keyword, "error", err)
+		return 0
+	}
+
+	count := 0
+	for _, video := range videos {
+		item := mapLocalVideoToResult(site, &video)
+		mu.Lock()
+		eventCh <- searchEvent{EventType: "result", Data: item}
+		mu.Unlock()
+		count++
+	}
+	return count
+}
+
+// getLocalDetail 从本地表获取详情
+func (s *SearchService) getLocalDetail(ctx context.Context, site *detailSiteInfo, vodID int64) (*response.ResourceDetailResp, error) {
+	video, err := s.localVideoRepo.GetByID(vodID)
+	if err != nil {
+		return nil, errs.WithMsg("未找到本地详情数据", errs.ErrNotFound)
+	}
+	return mapLocalVideoToDetail(site, video), nil
+}
+
+// getLocalPaginate 从本地表分页查询
+func (s *SearchService) getLocalPaginate(ctx context.Context, site *detailSiteInfo, page, pageSize int, keyword string) (*response.ResourcePageResp, error) {
+	videos, total, err := s.localVideoRepo.Paginate(page, pageSize, keyword)
+	if err != nil {
+		return nil, errs.WithMsg("本地分页查询失败", errs.ErrInternal)
+	}
+
+	si := &siteInfo{
+		Domain: site.Domain,
+		Name:   site.Name,
+	}
+	items := make([]response.SearchResultItem, 0, len(videos))
+	for _, video := range videos {
+		items = append(items, mapLocalVideoToResult(si, &video))
+	}
+
+	totalPages := 0
+	if pageSize > 0 {
+		totalPages = (int(total) + pageSize - 1) / pageSize
+	}
+
+	return &response.ResourcePageResp{
+		Items:      items,
+		Total:      int(total),
+		Page:       page,
+		PageSize:   pageSize,
+		TotalPages: totalPages,
+	}, nil
+}
+
+// mapLocalVideoToResult 将 LocalVideo 映射为搜索结果
+func mapLocalVideoToResult(site *siteInfo, video *entity.LocalVideo) response.SearchResultItem {
+	return response.SearchResultItem{
+		VodID:          video.VodID,
+		ResourceDomain: site.Domain,
+		ResourceName:   site.Name,
+		Title:          video.VodName,
+		Subtitle:       video.VodSub,
+		Year:           video.VodYear,
+		Type:           video.TypeName,
+		Genre:          video.VodClass,
+		Cover:          video.VodPic,
+		Actors:         video.VodActor,
+		Director:       video.VodDirector,
+		Description:    video.VodBlurb,
+		Remarks:        video.VodRemarks,
+		Area:           video.VodArea,
+		Lang:           video.VodLang,
+		Score:          video.VodScore,
+		PlayFrom:       video.VodPlayFrom,
+		PlayURL:        video.VodPlayURL,
+	}
+}
+
+// mapLocalVideoToDetail 将 LocalVideo 映射为详情响应
+func mapLocalVideoToDetail(site *detailSiteInfo, video *entity.LocalVideo) *response.ResourceDetailResp {
+	return &response.ResourceDetailResp{
+		VodID:          video.VodID,
+		VodName:        video.VodName,
+		VodSub:         video.VodSub,
+		VodPic:         video.VodPic,
+		VodActor:       video.VodActor,
+		VodDirector:    video.VodDirector,
+		VodBlurb:       video.VodBlurb,
+		VodContent:     video.VodContent,
+		VodRemarks:     video.VodRemarks,
+		VodArea:        video.VodArea,
+		VodLang:        video.VodLang,
+		VodYear:        video.VodYear,
+		VodScore:       video.VodScore,
+		VodClass:       video.VodClass,
+		VodPlayURL:     video.VodPlayURL,
+		TypeName:       video.TypeName,
+		ResourceDomain: site.Domain,
+		ResourceName:   site.Name,
+	}
 }

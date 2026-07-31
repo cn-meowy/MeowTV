@@ -192,8 +192,10 @@ func New(cfg Config, h *Handlers, authMid *middleware.NewAuthMiddleware, corsOri
 	download.POST("/delete", h.Download.Delete)
 	download.POST("/retry", h.Download.Retry)
 	download.POST("/check", h.Download.Check)
-	// 流式播放已下载文件（需要 auth，通过 URL param 传递 task_id）
-	download.GET("/file/:id", h.Download.File)
+	// 流式播放已下载文件：使用临时 Token 认证（query param token），
+	// 因为 Artplayer 通过 video.src 加载，无法设置 Authorization header。
+	// 复用 stream proxy 的 TempTokenAuth 中间件，token 由前端 /api/token/temp 获取。
+	api.GET("/download/file/:id", h.Download.File, middleware.NewTempTokenAuth(cacheInstance))
 
 	// Admin download routes (admin required)
 	adminDownload := api.Group("/admin/download")

@@ -60,6 +60,7 @@ flowchart LR
 
 - 创建非 root 用户 `meowtv`（UID 1000 / GID 1000）运行容器，降低提权风险
 - 工作目录 `/app`，数据目录 `/app/data`、日志目录 `/app/logs` 均归 `meowtv` 用户所有
+- ⚠️ bind mount 场景下，宿主机目录属主 uid/gid 会原样保留进容器。若宿主机用户非 1000:1000（如 macOS 常为 501:80），容器内 `1000` 将无法写入挂载目录。此时需通过 `--user $(id -u):$(id -g)`（docker run）或 `PUID`/`PGID` 环境变量（compose）覆盖运行用户，使其与宿主机目录属主一致
 
 ### 健康检查
 
@@ -117,8 +118,10 @@ docker buildx build \
 docker pull xiaosheng078/meowtv:latest
 
 # 运行容器
+# --user 须与挂载目录属主一致；$(id -u):$(id -g) 在当前用户 shell 展开为字面量
 docker run -d \
   --name meowtv \
+  --user $(id -u):$(id -g) \
   -p 8088:8088 \
   -v $(pwd)/backend/configs:/app/configs:ro \
   -v $(pwd)/backend/data:/app/data \
@@ -137,6 +140,13 @@ docker run -d \
 ```bash
 cd scripts/backend
 docker compose up -d
+```
+
+> 该 compose 文件通过 `user: "${PUID}:${PGID}"` 设置运行用户，且**不设默认值**。直接 `docker compose up` 前需先 `export PUID=$(id -u) PGID=$(id -g)`，否则会因 `user: ":"` 报错。推荐改用部署脚本：
+
+```bash
+cd scripts/backend
+sudo ./deploy.sh --uid $(id -u) --gid $(id -g)
 ```
 
 辅助脚本：

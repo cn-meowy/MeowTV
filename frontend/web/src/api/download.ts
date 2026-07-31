@@ -1,6 +1,6 @@
 import { API } from '@/constants/api';
 import { post } from './client';
-import { useAuthStore } from '@/stores/auth';
+import { getTempToken } from './tempToken';
 import type {
   DownloadCreateReq,
   DownloadCreateResp,
@@ -47,10 +47,27 @@ export function checkDownload(req: DownloadCheckReq): Promise<DownloadCheckResp>
   return post<DownloadCheckResp>(API.DOWNLOAD_CHECK, req as unknown as Record<string, unknown>);
 }
 
-/** 获取已下载文件的播放 URL（附加 JWT token 用于 video 元素认证） */
-export function getDownloadFileUrl(taskId: number): string {
-  const token = useAuthStore.getState().accessToken || '';
-  return `${API.DOWNLOAD_FILE}/${taskId}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+/**
+ * 给任意 URL 追加临时 Token（用于 video 元素认证）
+ *
+ * /api/download/file/:id 改用临时 Token 认证（query param token），
+ * 因为 Artplayer 通过 video.src 加载，无法设置 Authorization header。
+ * 临时 Token 由 /api/token/temp 获取（带缓存 + 并发去重）。
+ *
+ * 已含 query 参数的 URL 会用 & 拼接，否则用 ? 拼接。
+ */
+export async function appendTempToken(url: string): Promise<string> {
+  const token = await getTempToken();
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}token=${encodeURIComponent(token)}`;
+}
+
+/**
+ * 构建已下载文件的播放 URL（异步，附加临时 Token）
+ * 用于 checkDownload 命中后的本地文件播放。
+ */
+export async function buildDownloadFileUrlWithToken(taskId: number): Promise<string> {
+  return appendTempToken(`${API.DOWNLOAD_FILE}/${taskId}`);
 }
 
 // ── 管理端 ──────────────────────────────────────────────────────────────────

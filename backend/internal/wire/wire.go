@@ -24,6 +24,7 @@ var ConfigSet = wire.NewSet(
 	ProvideDBConfig,
 	ProvideCacheConfig,
 	ProvideAppConfig,
+	ProvideDemoLocalDataDir,
 )
 
 // CacheSet provides cache-related dependencies.
@@ -55,6 +56,7 @@ var RepositorySet = wire.NewSet(
 	repository.NewFavoriteRepository,
 	repository.NewDownloadRepository,
 	repository.NewDoubanRankRepository,
+	repository.NewLocalVideoRepository,
 )
 
 // ServiceSet provides service layer dependencies.
@@ -75,6 +77,7 @@ var ServiceSet = wire.NewSet(
 	service.NewDownloadService,
 	service.NewUserGroupService,
 	service.NewStreamService,
+	service.NewLocalDataService,
 )
 
 // HandlerSet provides handler layer dependencies.

@@ -125,7 +125,7 @@ class ProfileScreen extends ConsumerWidget {
                     ),
                     _SettingsTile(
                       icon: Icons.image_outlined,
-                      title: '豆瓣图片代理',
+                      title: '图片代理',
                       subtitle: _proxyModeLabel(ref.watch(doubanImageProxyProvider).mode),
                       onTap: () => _showProxyModePicker(context, ref),
                     ),
@@ -165,7 +165,6 @@ class ProfileScreen extends ConsumerWidget {
                     _SettingsTile(
                       icon: Icons.info_outline,
                       title: '关于',
-                      subtitle: 'v1.0.0',
                       onTap: () => context.push('/about'),
                     ),
                   ],
@@ -223,7 +222,7 @@ class ProfileScreen extends ConsumerWidget {
             children: [
               Padding(
                 padding: const EdgeInsets.all(16),
-                child: Text('选择豆瓣图片代理模式',
+                child: Text('选择图片代理模式',
                     style: TextStyle(color: colors.textPrimary, fontSize: 16, fontWeight: FontWeight.w600)),
               ),
               InkListTile(
@@ -231,7 +230,7 @@ class ProfileScreen extends ConsumerWidget {
                     color: current == DoubanImageProxyMode.backend ? colors.primary : colors.textSecondary),
                 title: Text('后端代理',
                     style: TextStyle(color: current == DoubanImageProxyMode.backend ? colors.primary : colors.textPrimary)),
-                subtitle: Text('通过服务器转发豆瓣图片，稳定可靠',
+                subtitle: Text('通过服务器转发图片，稳定可靠',
                     style: TextStyle(color: colors.textMuted, fontSize: 12)),
                 trailing: current == DoubanImageProxyMode.backend
                     ? Icon(Icons.check, color: colors.primary) : null,
@@ -245,7 +244,7 @@ class ProfileScreen extends ConsumerWidget {
                     color: current == DoubanImageProxyMode.frontend ? colors.primary : colors.textSecondary),
                 title: Text('前端代理',
                     style: TextStyle(color: current == DoubanImageProxyMode.frontend ? colors.primary : colors.textPrimary)),
-                subtitle: Text('直接加载豆瓣图片并设置请求头，延迟更低',
+                subtitle: Text('直接加载图片并设置请求头，延迟更低',
                     style: TextStyle(color: colors.textMuted, fontSize: 12)),
                 trailing: current == DoubanImageProxyMode.frontend
                     ? Icon(Icons.check, color: colors.primary) : null,

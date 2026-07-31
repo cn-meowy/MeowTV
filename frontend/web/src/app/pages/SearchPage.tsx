@@ -230,12 +230,7 @@ export default function SearchPage() {
       <div className="mb-4">
         <div className="flex items-center gap-3 flex-wrap">
           {/* 资源选择 - 与搜索框高度对齐 */}
-          <div
-            className="flex items-center transition-all duration-200"
-            style={{
-              height: "50px",
-            }}
-          >
+          <div className="flex items-start transition-all duration-200">
             <ResourceDropdown
               sites={sites}
               selected={selectedResources}

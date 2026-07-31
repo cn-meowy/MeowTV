@@ -120,13 +120,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                 ),
                 child: Row(
                   children: [
-                    const ResourceDropdownWidget(compact: true),
-                    Container(
-                      width: 1,
-                      height: 20,
-                      color: colors.border,
-                    ),
-                    const SizedBox(width: 8),
+                    // 仅当存在多个资源站点时才显示资源选择器及分隔线，
+                    // 单一站点时隐藏，避免无意义的切换 UI。
+                    if (state.sites.length > 1) ...[
+                      const ResourceDropdownWidget(compact: true),
+                      Container(
+                        width: 1,
+                        height: 20,
+                        color: colors.border,
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     Icon(Icons.search, color: colors.textMuted, size: 20),
                     const SizedBox(width: 12),
                     Expanded(

@@ -18,6 +18,10 @@ services:
     container_name: meowtv
     restart: unless-stopped
 
+    # 运行用户（必须与宿主机 bind mount 目录属主一致，由 deploy.sh --uid/--gid 传入 PUID/PGID）
+    # 不设默认值：不经 deploy.sh 直接 "docker compose up" 时需自行 export PUID/PGID，否则报错
+    user: "${PUID}:${PGID}"
+
     # 构建配置（当镜像不存在时从 Dockerfile 构建）
     build:
       context: ../../backend/
@@ -28,6 +32,7 @@ services:
       - "${MEOWTV_PORT:-8088}:${MEOWTV_SERVER_PORT:-8088}"
 
     # 卷挂载（bind mount，方便直接访问文件）
+    # 注意：bind mount 保留宿主机 uid/gid，容器 user 的 uid/gid（见上方 PUID/PGID）须与这些目录属主一致
     volumes:
       # 配置文件目录
       - ../../backend/configs:/app/configs:ro
