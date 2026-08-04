@@ -81,7 +81,7 @@ func (s *UserService) ChangePassword(ctx context.Context, userID int64, req *req
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)); err != nil {
-		return errs.WithMsg("旧密码不正确", errs.ErrBadRequest)
+		return errs.WithMsg("旧密码不正确", errs.ErrUnauthorized)
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
