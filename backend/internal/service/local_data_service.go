@@ -242,7 +242,7 @@ func (s *LocalDataService) scanDirectory(rootDir string) []videoEntry {
 // findCover 查找视频文件对应的封面图片
 // 规则：1. 同名前缀图片优先（movie.mp4 -> movie.jpg）
 //
-//  2. 否则取同目录内任意第一张图片
+//  2. 否则使用 ffmpeg 截取该视频第一帧作为封面
 func (s *LocalDataService) findCover(videoPath string) string {
 	dir := filepath.Dir(videoPath)
 	videoName := strings.TrimSuffix(filepath.Base(videoPath), filepath.Ext(videoPath))
@@ -255,22 +255,7 @@ func (s *LocalDataService) findCover(videoPath string) string {
 		}
 	}
 
-	// 2. 查找同目录内任意图片
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return ""
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		if imageExts[ext] {
-			return filepath.Join(dir, entry.Name())
-		}
-	}
-
-	// 3. 未找到封面图片，使用 ffmpeg 截取视频第一帧作为默认封面
+	// 2. 未找到同名封面图片，使用 ffmpeg 截取该视频第一帧作为默认封面
 	coverPath := filepath.Join(dir, videoName+".jpg")
 	if extracted, err := extractFirstFrame(videoPath, coverPath); err != nil {
 		slog.Warn("failed to extract first frame as cover, falling back to empty",

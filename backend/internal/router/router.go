@@ -149,8 +149,9 @@ func New(cfg Config, h *Handlers, authMid *middleware.NewAuthMiddleware, corsOri
 	resource.POST("/detail", h.Resource.Detail)
 	resource.POST("/paginate", h.Resource.Paginate)
 
-	// Resource image proxy (public - no token needed)
-	api.GET("/resource/image/proxy", h.Resource.ImageProxy)
+	// Resource image proxy (uses TempTokenAuth middleware)
+	// 相对路径/demo 本地封面图片通过该代理读取，需带临时 token 鉴权
+	api.GET("/resource/image/proxy", h.Resource.ImageProxy, middleware.NewTempTokenAuth(cacheInstance))
 
 	// Admin resource routes (admin required)
 	adminResource := api.Group("/admin/resource")
