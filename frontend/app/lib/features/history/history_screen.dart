@@ -128,7 +128,7 @@ class _HistoryItemCard extends ConsumerWidget {
     final proxyState = ref.watch(doubanImageProxyProvider);
     ref.read(doubanImageProxyProvider.notifier).checkAndRefresh();
     final baseUrl = ref.read(apiClientProvider).baseUrl;
-    final imageUrl = proxyState.buildImageUrl(item.vodPic, baseUrl);
+    final imageUrl = proxyState.resolveImageUrl(item.vodPic, baseUrl) ?? '';
     final headers = proxyState.httpHeadersForUrl(item.vodPic);
     final progressPercent = item.progress.round().clamp(0, 100);
     return GestureDetector(

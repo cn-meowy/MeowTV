@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/logger/app_logger.dart';
 import '../../core/network/api_client.dart';
 import '../../core/network/api_constants.dart';
 import '../../core/storage/secure_storage.dart';
@@ -40,12 +41,11 @@ class DoubanImageProxyState {
 
   /// 代理状态是否就绪，可用于决定是否渲染图片。
   ///
-  /// - 前端代理模式：始终就绪（直接请求原始 URL + headers）
-  /// - 后端代理模式：需要 tempToken 非空才算就绪
-  bool get isReady {
-    if (shouldUseFrontendProxy) return true;
-    return tempToken.isNotEmpty;
-  }
+  /// 两种代理模式都需要 tempToken 非空才算就绪：
+  /// - 后端代理模式：所有图片代理 URL 均需 token 鉴权
+  /// - 前端代理模式：远程图片可直接渲染，但演示模式本地路径需降级走
+  ///   后端代理接口，仍需 token 鉴权
+  bool get isReady => tempToken.isNotEmpty;
 
   /// 根据代理模式返回需要的 HTTP headers
   /// - 前端代理 + 豆瓣图片 → 返回 doubanHttpHeaders
@@ -88,6 +88,85 @@ class DoubanImageProxyState {
       baseUrl: baseUrl,
     );
   }
+
+  /// 统一的图片 URL 解析方法，处理所有图片来源：
+  /// - 远程 HTTP/HTTPS 图片、豆瓣图片、资源站图片
+  /// - 演示模式的本地路径（绝对或相对，如 `/app/videos/我的吉他.jpg`、
+  ///   `videos/我的吉他.jpg`）
+  ///
+  /// 返回可直接用于 Image/CachedNetworkImage 的 URL，或在无法解析时返回 `null`
+  /// （调用方应展示占位图）。
+  ///
+  /// 规则：
+  /// - 空字符串 → 返回 `''`
+  /// - 远程豆瓣图片 → 复用 [buildImageUrl] 逻辑
+  /// - 远程资源站图片 → 后端代理返回带 token 的资源图片代理 URL；前端代理原样返回
+  /// - 演示模式本地路径（绝对或相对）：
+  ///   - 两种代理模式均走 `/api/resource/image/proxy?url=<encoded>&token=<temp>`
+  ///     （后端代理直接读取本地文件；前端代理降级走后端代理接口，需 tempToken）
+  ///   - tempToken 为空时仍返回不带 token 的 URL，后端会返回 401，便于日志排查
+  String? resolveImageUrl(String originalUrl, String baseUrl) {
+    if (originalUrl.isEmpty) return '';
+
+    // 远程 HTTP/HTTPS 图片
+    if (ImageUtils.isRemoteImageUrl(originalUrl)) {
+      // 豆瓣图片
+      if (ImageUtils.isDoubanImageUrl(originalUrl)) {
+        if (shouldUseFrontendProxy) return originalUrl;
+        // tempToken 为空时 buildImageUrl 会回退到原始 URL（含 warning 日志）
+        return ImageUtils.buildDoubanImageUrl(
+          originalUrl: originalUrl,
+          tempToken: tempToken,
+          baseUrl: baseUrl,
+          proxyMode: DoubanImageProxyMode.backend,
+        );
+      }
+
+      // 资源站图片
+      if (shouldUseFrontendProxy) return originalUrl;
+      // 后端代理模式：构建带 token 的资源图片代理 URL
+      final proxyUrl = ImageUtils.buildResourceImageProxyUrl(
+        originalUrl: originalUrl,
+        baseUrl: baseUrl,
+      );
+      if (tempToken.isEmpty) return proxyUrl;
+      return '$proxyUrl&token=$tempToken';
+    }
+
+    // 演示模式本地路径（绝对或相对，非 http(s) scheme）
+    final isAbsolute = ImageUtils.isAbsolutePath(originalUrl);
+    final isRelative = ImageUtils.isRelativePath(originalUrl);
+    if (isAbsolute || isRelative) {
+      appLogger.d('resolveImageUrl: demo local path detected, '
+          'kind=${isAbsolute ? "absolute" : "relative"}, path=$originalUrl');
+      if (isRelative) {
+        appLogger.i('Demo relative path will be resolved by backend '
+            'relative to its CWD: $originalUrl');
+      }
+      // 前端代理模式：本地路径只能通过后端代理接口读取（前端无法直接访问
+      // 服务端本地文件），因此降级走后端代理接口（需 tempToken）
+      if (shouldUseFrontendProxy) {
+        appLogger.d('resolveImageUrl: demo local path, frontend proxy mode '
+            'fallback to backend proxy: $originalUrl');
+      }
+      // 两种模式统一走后端代理接口读取本地文件
+      // path 原样透传，buildDemoImageProxyUrl 内部已用 Uri.encodeComponent 编码
+      final proxyUrl = ImageUtils.buildDemoImageProxyUrl(
+        localPath: originalUrl,
+        tempToken: tempToken,
+        baseUrl: baseUrl,
+      );
+      if (proxyUrl == null) {
+        appLogger.w('resolveImageUrl: demo image proxy URL is null: '
+            'localPath=$originalUrl, tempTokenEmpty=${tempToken.isEmpty}, '
+            'baseUrl=$baseUrl');
+      }
+      return proxyUrl;
+    }
+
+    // 其他情况（data URI 等）原样返回
+    return originalUrl;
+  }
 }
 
 /// 图片代理模式配置 — 代理模式选择仅保存在前端本地存储，不从后台查询。
@@ -121,9 +200,7 @@ class DoubanImageProxyNotifier extends StateNotifier<DoubanImageProxyState> {
   /// 导致的时序竞争（数据先于 token 就绪，buildImageUrl 回退到原始 URL）。
   Future<void> init() async {
     await loadMode();
-    if (state.mode == DoubanImageProxyMode.backend) {
-      await ensureTokenLoaded();
-    }
+    await ensureTokenLoaded();
   }
 
   /// 切换代理模式
@@ -132,13 +209,15 @@ class DoubanImageProxyNotifier extends StateNotifier<DoubanImageProxyState> {
     state = state.copyWith(mode: mode);
   }
 
-  /// 确保后端代理模式下的 tempToken 已加载。
-  /// 应在首页、收藏页等需要展示豆瓣图片的页面 initState 中调用。
+  /// 确保 tempToken 已加载。
+  /// 应在首页、收藏页等需要展示图片的页面 initState 中调用。
+  ///
+  /// 两种代理模式都需要 token：后端代理模式用于所有图片代理 URL 鉴权，
+  /// 前端代理模式用于演示模式本地路径降级走后端代理接口的鉴权。
   Future<void> ensureTokenLoaded() async {
-    if (state.mode == DoubanImageProxyMode.backend &&
-        (state.tempToken.isEmpty ||
-            state.tokenExpiresAt == null ||
-            _isTokenExpiringSoon)) {
+    if (state.tempToken.isEmpty ||
+        state.tokenExpiresAt == null ||
+        _isTokenExpiringSoon) {
       await _refreshToken();
     }
   }
@@ -158,8 +237,7 @@ class DoubanImageProxyNotifier extends StateNotifier<DoubanImageProxyState> {
   /// 应在 UI build 中 ref.watch(doubanImageProxyProvider) 后调用，
   /// 刷新完成后 state 变化会自动触发 UI 重建。
   void checkAndRefresh() {
-    if (state.mode == DoubanImageProxyMode.backend &&
-        state.tempToken.isNotEmpty &&
+    if (state.tempToken.isNotEmpty &&
         state.tokenExpiresAt != null &&
         _isTokenExpiringSoon) {
       _refreshToken(); // 异步，不 await — 刷新完成后 state 更新触发 UI 重建
@@ -175,6 +253,7 @@ class DoubanImageProxyNotifier extends StateNotifier<DoubanImageProxyState> {
     // 并发去重：已有刷新请求进行中，直接返回当前 token
     if (_isRefreshing) return state.tempToken;
     _isRefreshing = true;
+    appLogger.i('Refreshing tempToken, baseUrl=${_api.baseUrl}');
     try {
       final resp = await _api.post<Map<String, dynamic>>(
         ApiConstants.tempToken,
@@ -190,11 +269,15 @@ class DoubanImageProxyNotifier extends StateNotifier<DoubanImageProxyState> {
           tokenExpiresAt:
               DateTime.now().add(Duration(seconds: expiresIn) - _tokenBuffer),
         );
+        appLogger.i('tempToken refreshed successfully, expiresIn=${expiresIn}s');
+      } else {
+        appLogger.w('tempToken refresh returned empty token');
       }
       return token;
-    } catch (_) {
+    } catch (e, st) {
       // 刷新失败：清空 token 并清除过期时间，确保下次 ensureTokenLoaded
       // 能正确检测到需要刷新（而非因 tokenExpiresAt 仍为旧值而跳过）
+      appLogger.e('Refresh tempToken failed', error: e, stackTrace: st);
       state = state.copyWith(
         tempToken: '',
         tokenExpiresAt: null,

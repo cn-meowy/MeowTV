@@ -59,6 +59,7 @@ class ApiClient {
 
   /// Change base URL at runtime (e.g. after settings change).
   void setBaseUrl(String url) {
+    appLogger.i('ApiClient baseUrl set to: $url');
     _dio.options.baseUrl = url;
   }
 
@@ -237,6 +238,8 @@ class ApiClient {
           }
         } else if (_isConnectionError(error)) {
           // Connection-level error: server unreachable, notify auth layer to show message then logout
+          appLogger.e('Connection error: type=${error.type}, '
+              'msg=${error.message}, baseUrl=${_dio.options.baseUrl}');
           appLogger.w('Server unreachable, triggering connection error handler');
           await onConnectionError?.call();
           handler.reject(error);

@@ -58,7 +58,10 @@ dependencies:
   volume_controller: ^3.0.0
 
   # Picture-in-Picture (Android + iOS)
-  fl_pip: ^3.2.3
+  # 上游 fl_pip 3.2.3 在 Flutter ≥ 3.27 下编译失败（FlutterViewController.engine 已改为非可选），
+  # 维护者尚未发布修复（见 Wayaer/fl_pip#33）。使用本地补丁版本，见 third_party/fl_pip/LOCAL_PATCHES.md。
+  fl_pip:
+    path: ./third_party/fl_pip
 
   # XML parsing (Bilibili danmaku XML)
   xml: ^6.5.0

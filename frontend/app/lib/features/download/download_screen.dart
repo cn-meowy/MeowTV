@@ -140,7 +140,7 @@ class _DownloadTaskCard extends ConsumerWidget {
     final proxyState = ref.watch(doubanImageProxyProvider);
     ref.read(doubanImageProxyProvider.notifier).checkAndRefresh();
     final baseUrl = ref.read(apiClientProvider).baseUrl;
-    final imageUrl = proxyState.buildImageUrl(task.vodPic, baseUrl);
+    final imageUrl = proxyState.resolveImageUrl(task.vodPic, baseUrl) ?? '';
     final headers = proxyState.httpHeadersForUrl(task.vodPic);
     final statusLabel = _statusLabel(task.status);
     final statusColor = _statusColor(task.status, colors);

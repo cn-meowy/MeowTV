@@ -18,7 +18,9 @@ import '../../features/qrcode/qrcode_scan_screen.dart';
 import '../../features/qrcode/qrcode_display_screen.dart';
 import '../../screens/splash_screen.dart';
 import '../../screens/start_screen.dart';
-import '../../screens/disclaimer_screen.dart';
+import '../../screens/agreements_screen.dart';
+import '../../screens/user_agreement_screen.dart';
+import '../../screens/privacy_policy_screen.dart';
 import '../../screens/login_screen.dart';
 import '../../screens/main_shell.dart';
 
@@ -29,7 +31,7 @@ final _shellNavigatorKey = GlobalKey<NavigatorState>();
 /// only when route-relevant auth fields change.
 ///
 /// The redirect logic only depends on: `isInitializing`, `isLoggedIn`,
-/// `hasSeenDisclaimer`, and `profile.role`.  Other state changes
+/// `hasAcceptedAgreements`, and `profile.role`.  Other state changes
 /// (e.g. `profile` update, `baseUrl` change) must NOT trigger a
 /// GoRouter refresh — otherwise every `fetchProfile()` call causes
 /// the entire route tree to rebuild, which disposes & recreates
@@ -40,10 +42,11 @@ class AuthNotifierListenable extends ChangeNotifier {
     authNotifier.addListener((state) {
       // Only notify GoRouter when route-relevant fields actually change
       final p = prev;
-      final shouldNotify = p == null ||
+      final shouldNotify =
+          p == null ||
           p.isInitializing != state.isInitializing ||
           p.isLoggedIn != state.isLoggedIn ||
-          p.hasSeenDisclaimer != state.hasSeenDisclaimer ||
+          p.hasAcceptedAgreements != state.hasAcceptedAgreements ||
           p.profile?.role != state.profile?.role;
       prev = state;
       if (shouldNotify) {
@@ -58,6 +61,84 @@ final authListenableProvider = Provider<AuthNotifierListenable>((ref) {
   return AuthNotifierListenable(authNotifier);
 });
 
+/// Pure redirect decision extracted from the GoRouter `redirect` callback.
+///
+/// Returns the location to redirect to, or `null` to stay on [loc].
+/// Keeping this logic in a side-effect-free function makes the onboarding
+/// state machine unit-testable without spinning up GoRouter/Riverpod.
+///
+/// The user-agreement and privacy-policy pages are reachable from the
+/// agreements screen *before* the user has accepted the agreements, so
+/// they must be whitelisted in the "not logged in, agreements NOT
+/// accepted" branch — otherwise tapping them bounces back to /start.
+String? routeRedirect(AuthState authState, String loc) {
+  // While initializing, stay on splash (/)
+  if (authState.isInitializing) {
+    return loc == '/' ? null : '/';
+  }
+
+  // After initialization, route based on auth state
+  final accepted = authState.hasAcceptedAgreements;
+  final loggedIn = authState.isLoggedIn;
+
+  final isSplash = loc == '/';
+  final isStart = loc == '/start';
+  final isAgreements = loc == '/agreements';
+  final isLogin = loc == '/login';
+  // Agreement detail pages are read-only legal docs reachable from both
+  // the onboarding agreements screen and the profile screen.
+  final isAgreementDetail =
+      loc == '/user-agreement' || loc == '/privacy-policy';
+  // Pages accessible only when logged in
+  final isProtected =
+      loc == '/home' ||
+      loc == '/resource' ||
+      loc == '/search' ||
+      loc == '/favorites' ||
+      loc == '/profile' ||
+      loc == '/detail' ||
+      loc == '/play' ||
+      loc == '/history' ||
+      loc == '/downloads' ||
+      loc == '/admin-settings' ||
+      loc == '/qrcode-scan';
+
+  // Admin-only pages: redirect non-admin users
+  if (loggedIn && loc == '/admin-settings') {
+    final isAdmin = authState.profile?.role == 1;
+    if (!isAdmin) return '/home';
+  }
+
+  // ── Logged in ──────────────────────────────────────────
+  if (loggedIn) {
+    // From splash/start/agreements/login → home
+    if (isSplash || isStart || isAgreements || isLogin) return '/home';
+    // Already on a protected page, stay
+    return null;
+  }
+
+  // ── Not logged in, agreements NOT accepted ─────────────
+  if (!accepted) {
+    // Splash → start
+    if (isSplash) return '/start';
+    // Already on start/agreements, or reviewing the agreement detail
+    // pages linked from the agreements screen — stay.
+    if (isStart || isAgreements || isAgreementDetail) return null;
+    // Any other page (including /login) → start
+    return '/start';
+  }
+
+  // ── Agreements accepted, not logged in ─────────────────
+  // Splash/start/agreements → login
+  if (isSplash || isStart || isAgreements) return '/login';
+  // Already on login, stay
+  if (isLogin) return null;
+  // Trying to access protected page → login
+  if (isProtected) return '/login';
+  // Fallback: stay on current page (about, agreement detail, etc.)
+  return null;
+}
+
 final goRouterProvider = Provider<GoRouter>((ref) {
   final listenable = ref.watch(authListenableProvider);
 
@@ -65,87 +146,16 @@ final goRouterProvider = Provider<GoRouter>((ref) {
     navigatorKey: rootNavigatorKey,
     initialLocation: '/',
     refreshListenable: listenable,
-    redirect: (context, state) {
-      final authState = ref.read(authProvider);
-      final loc = state.matchedLocation;
-
-      // While initializing, stay on splash (/)
-      if (authState.isInitializing) {
-        return loc == '/' ? null : '/';
-      }
-
-      // After initialization, route based on auth state
-      final accepted = authState.hasSeenDisclaimer;
-      final loggedIn = authState.isLoggedIn;
-
-      final isSplash = loc == '/';
-      final isStart = loc == '/start';
-      final isDisclaimer = loc == '/disclaimer';
-      final isLogin = loc == '/login';
-      // Pages accessible only when logged in
-      final isProtected = loc == '/home' ||
-          loc == '/resource' ||
-          loc == '/search' ||
-          loc == '/favorites' ||
-          loc == '/profile' ||
-          loc == '/detail' ||
-          loc == '/play' ||
-          loc == '/history' ||
-          loc == '/downloads' ||
-          loc == '/admin-settings' ||
-          loc == '/qrcode-scan';
-
-      // Admin-only pages: redirect non-admin users
-      if (loggedIn && loc == '/admin-settings') {
-        final isAdmin = authState.profile?.role == 1;
-        if (!isAdmin) return '/home';
-      }
-
-      // ── Logged in ──────────────────────────────────────────
-      if (loggedIn) {
-        // From splash/start/disclaimer/login → home
-        if (isSplash || isStart || isDisclaimer || isLogin) return '/home';
-        // Already on a protected page, stay
-        return null;
-      }
-
-      // ── Not logged in, disclaimer NOT accepted ─────────────
-      if (!accepted) {
-        // Splash → start
-        if (isSplash) return '/start';
-        // Already on start or disclaimer (user navigating forward), stay
-        if (isStart || isDisclaimer) return null;
-        // Any other page (including /login) → start
-        return '/start';
-      }
-
-      // ── Disclaimer accepted, not logged in ─────────────────
-      // Splash/start/disclaimer → login
-      if (isSplash || isStart || isDisclaimer) return '/login';
-      // Already on login, stay
-      if (isLogin) return null;
-      // Trying to access protected page → login
-      if (isProtected) return '/login';
-      // Fallback: stay on current page
-      return null;
-    },
+    redirect: (context, state) =>
+        routeRedirect(ref.read(authProvider), state.matchedLocation),
     routes: [
+      GoRoute(path: '/', builder: (context, state) => const SplashScreen()),
+      GoRoute(path: '/start', builder: (context, state) => const StartScreen()),
       GoRoute(
-        path: '/',
-        builder: (context, state) => const SplashScreen(),
+        path: '/agreements',
+        builder: (context, state) => const AgreementsScreen(),
       ),
-      GoRoute(
-        path: '/start',
-        builder: (context, state) => const StartScreen(),
-      ),
-      GoRoute(
-        path: '/disclaimer',
-        builder: (context, state) => const DisclaimerScreen(),
-      ),
-      GoRoute(
-        path: '/login',
-        builder: (context, state) => const LoginScreen(),
-      ),
+      GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       ShellRoute(
         navigatorKey: _shellNavigatorKey,
         builder: (context, state, child) => MainShell(child: child),
@@ -167,10 +177,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
               final q = state.uri.queryParameters['q'];
               return NoTransitionPage(
                 key: ValueKey('search-${q ?? ''}-${doubanId ?? ''}'),
-                child: SearchScreen(
-                  initialDoubanId: doubanId,
-                  initialQuery: q,
-                ),
+                child: SearchScreen(initialDoubanId: doubanId, initialQuery: q),
               );
             },
           ),
@@ -210,10 +217,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           );
         },
       ),
-      GoRoute(
-        path: '/about',
-        builder: (context, state) => const AboutScreen(),
-      ),
+      GoRoute(path: '/about', builder: (context, state) => const AboutScreen()),
       GoRoute(
         path: '/admin-settings',
         builder: (context, state) => const AdminSettingsScreen(),
@@ -233,6 +237,14 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/qrcode-display',
         builder: (context, state) => const QRCodeDisplayScreen(),
+      ),
+      GoRoute(
+        path: '/user-agreement',
+        builder: (context, state) => const UserAgreementScreen(),
+      ),
+      GoRoute(
+        path: '/privacy-policy',
+        builder: (context, state) => const PrivacyPolicyScreen(),
       ),
     ],
   );

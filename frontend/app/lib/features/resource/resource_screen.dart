@@ -67,7 +67,7 @@ class _ResourceScreenState extends ConsumerState<ResourceScreen> {
     if (cover == null || cover.isEmpty) return '';
     final proxyState = ref.read(doubanImageProxyProvider);
     final baseUrl = ref.read(apiClientProvider).baseUrl;
-    return proxyState.buildImageUrl(cover, baseUrl);
+    return proxyState.resolveImageUrl(cover, baseUrl) ?? '';
   }
 
   /// Build HTTP headers for resource cover images.

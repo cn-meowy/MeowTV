@@ -163,6 +163,18 @@ class ProfileScreen extends ConsumerWidget {
                         onTap: () => context.push('/admin-settings'),
                       ),
                     _SettingsTile(
+                      icon: Icons.description_outlined,
+                      title: '用户协议',
+                      subtitle: '查看用户协议',
+                      onTap: () => context.push('/user-agreement'),
+                    ),
+                    _SettingsTile(
+                      icon: Icons.privacy_tip_outlined,
+                      title: '隐私政策',
+                      subtitle: '查看隐私政策',
+                      onTap: () => context.push('/privacy-policy'),
+                    ),
+                    _SettingsTile(
                       icon: Icons.info_outline,
                       title: '关于',
                       onTap: () => context.push('/about'),

@@ -67,6 +67,8 @@ class SecureStorageService {
   static const _refreshTokenKey = 'refresh_token';
   static const _isLoggedInKey = 'is_logged_in';
   static const _hasSeenDisclaimer = 'has_seen_disclaimer';
+  static const _agreementsAcceptedKey = 'agreements_accepted';
+  static const _agreementsVersionKey = 'agreements_version';
   static const _themeModeKey = 'theme_mode';
   static const _doubanImageProxyModeKey = 'douban_image_proxy_mode';
   static const _bufferModeKey = 'buffer_mode';
@@ -301,7 +303,7 @@ class SecureStorageService {
   Future<void> setLoggedIn(bool value) =>
       write(key: _isLoggedInKey, value: value.toString());
 
-  // ---- Disclaimer ----
+  // ---- Disclaimer (legacy, kept for migration) ----
   Future<bool> hasSeenDisclaimer() async {
     final val = await read(key: _hasSeenDisclaimer);
     return val == 'true';
@@ -309,6 +311,39 @@ class SecureStorageService {
 
   Future<void> setHasSeenDisclaimer(bool value) =>
       write(key: _hasSeenDisclaimer, value: value.toString());
+
+  // ---- Agreements (用户协议 & 隐私政策) ----
+  static const int currentAgreementsVersion = 1;
+
+  Future<bool> hasAcceptedAgreements() async {
+    final val = await read(key: _agreementsAcceptedKey);
+    return val == 'true';
+  }
+
+  Future<int> getAcceptedAgreementsVersion() async {
+    final val = await read(key: _agreementsVersionKey);
+    return int.tryParse(val ?? '') ?? 0;
+  }
+
+  /// Returns true if user must (re-)accept the agreements:
+  /// not yet accepted OR accepted an older version.
+  /// Also migrates legacy disclaimer acceptance (v0) — old users are
+  /// treated as having accepted version 0, so they re-confirm on upgrade.
+  Future<bool> needsAgreementsConfirmation() async {
+    final accepted = await hasAcceptedAgreements();
+    if (!accepted) {
+      // Legacy migration: if old disclaimer was seen but new flag not set,
+      // treat as version 0 (will re-confirm due to version mismatch).
+      return true;
+    }
+    final version = await getAcceptedAgreementsVersion();
+    return version < currentAgreementsVersion;
+  }
+
+  Future<void> setAgreementsAccepted() async {
+    await write(key: _agreementsAcceptedKey, value: 'true');
+    await write(key: _agreementsVersionKey, value: currentAgreementsVersion.toString());
+  }
 
   // ---- Theme Mode ----
   Future<String?> getThemeMode() => read(key: _themeModeKey);

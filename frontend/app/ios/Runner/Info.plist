@@ -70,6 +70,8 @@
     <dict>
       <key>NSAllowsLocalNetworking</key>
       <true/>
+      <key>NSAllowsArbitraryLoads</key>
+      <true/>
     </dict>
     <key>NSCameraUsageDescription</key>
     <string>MeowTV 需要使用相机扫描二维码以完成 TV 端登录</string>

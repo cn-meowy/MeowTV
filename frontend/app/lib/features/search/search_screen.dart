@@ -309,7 +309,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   final proxyState = ref.watch(doubanImageProxyProvider);
                   ref.read(doubanImageProxyProvider.notifier).checkAndRefresh();
                   final baseUrl = ref.read(apiClientProvider).baseUrl;
-                  final imgProxyUrl = proxyState.buildImageUrl(item.cover ?? '', baseUrl);
+                  final imgProxyUrl = proxyState.resolveImageUrl(item.cover ?? '', baseUrl) ?? '';
                   final imgHeaders = proxyState.httpHeadersForUrl(item.cover ?? '');
                   return VideoCard(
                     title: item.title,
@@ -363,7 +363,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             (i) => i.cover != null && i.cover!.isNotEmpty,
             orElse: () => first,
           ).cover ?? '';
-          final imgProxyUrl = proxyState.buildImageUrl(cover, baseUrl);
+          final imgProxyUrl = proxyState.resolveImageUrl(cover, baseUrl) ?? '';
           final imgHeaders = proxyState.httpHeadersForUrl(cover);
 
           return NameGroupedCard(

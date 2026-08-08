@@ -234,6 +234,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (bufferState.mode == BufferMode.strategyA) {
         appLogger.i('[Player] 方案A 缓冲模式，当前使用默认缓冲');
       }
+      // 确保临时 Token 就绪：download/file 路由只接受临时 Token（iOS AVPlayer
+      // 无法注入 Authorization header），若 token 未就绪会导致 401。
+      // init() 内部仅在后端代理模式且 token 过期/为空时才刷新，开销极小。
+      await ref.read(doubanImageProxyProvider.notifier).init();
       // 先检查本地下载，完成后再播放
       await _checkLocalDownload();
       _playCurrentEpisode();
@@ -396,8 +400,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
         // 缓冲状态
         final isBuffering = value.isBuffering;
-        appLogger.i('[Player] videoListener 事件: buffering=$isBuffering (之前: $_isBuffering)');
         if (isBuffering != _isBuffering) {
+          appLogger.i('[Player] videoListener 事件: buffering=$isBuffering (之前: $_isBuffering)');
           setState(() => _isBuffering = isBuffering);
           if (isBuffering) {
             appLogger.i('[Player] 开始缓冲，启动缓冲超时');
@@ -889,13 +893,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       if (resp != null && resp.found && resp.taskId > 0 && resp.fileFormat == 'mp4') {
         appLogger.i('[Player] 本地 MP4 文件已找到, task_id: ${resp.taskId}');
-        final fileUrl = await downloadNotifier.getDownloadFileUrl(resp.taskId);
-        if (seq != _checkDownloadSeq || !mounted) return;
-        setState(() {
-          _localFileUrl = fileUrl;
-          _localFileFormat = 'mp4';
-          _checkingLocal = false;
-        });
+        try {
+          final fileUrl = await downloadNotifier.getDownloadFileUrl(resp.taskId);
+          if (seq != _checkDownloadSeq || !mounted) return;
+          setState(() {
+            _localFileUrl = fileUrl;
+            _localFileFormat = 'mp4';
+            _checkingLocal = false;
+          });
+        } on StateError catch (e) {
+          // 临时 Token 不可用（temp_token_unavailable）：回退到远程流播放
+          if (seq != _checkDownloadSeq || !mounted) return;
+          appLogger.w('[Player] 获取临时 Token 失败，回退远程流: ${e.message}');
+          _resetLocalState();
+        }
       } else if (resp != null && resp.found && resp.fileFormat == 'ts') {
         appLogger.i('[Player] 本地文件为 TS 格式，回退远程流, task_id: ${resp.taskId}');
         setState(() {

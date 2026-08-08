@@ -137,7 +137,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       itemBuilder: (context, i) {
                         final subject = homeState.bannerSubjects[i];
                         final baseUrl = ref.read(apiClientProvider).baseUrl;
-                        final imageUrl = proxyState.buildImageUrl(subject.originalCover, baseUrl);
+                        final imageUrl = proxyState.resolveImageUrl(subject.originalCover, baseUrl) ?? '';
                         final headers = proxyState.httpHeadersForUrl(subject.originalCover);
                         return _BannerCard(
                           subject: subject,
@@ -437,7 +437,7 @@ class _ContentSection extends ConsumerWidget {
               separatorBuilder: (_, _) => const SizedBox(width: 12),
               itemBuilder: (context, i) {
                 final baseUrl = ref.read(apiClientProvider).baseUrl;
-                final imgProxyUrl = proxyState.buildImageUrl(items[i].cover, baseUrl);
+                final imgProxyUrl = proxyState.resolveImageUrl(items[i].cover, baseUrl) ?? '';
                 final headers = proxyState.httpHeadersForUrl(items[i].cover);
                 return VideoCard(
                   title: items[i].title,

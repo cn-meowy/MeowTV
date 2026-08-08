@@ -192,7 +192,7 @@ class _DetailScreenState extends ConsumerState<DetailScreen> {
                       final proxyState = ref.watch(doubanImageProxyProvider);
                       ref.read(doubanImageProxyProvider.notifier).checkAndRefresh();
                       final baseUrl = ref.read(apiClientProvider).baseUrl;
-                      final imgProxyUrl = proxyState.buildImageUrl(detail.vodPic!, baseUrl);
+                      final imgProxyUrl = proxyState.resolveImageUrl(detail.vodPic!, baseUrl) ?? '';
                       final imgHeaders = proxyState.httpHeadersForUrl(detail.vodPic!);
                       return CachedNetworkImage(
                         imageUrl: imgProxyUrl,
