@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/theme/app_theme.dart';
 import '../../shared/models/resource_site.dart';
+import '../../shared/widgets/equal_width_site_wrap.dart';
 import '../../features/search/search_provider.dart';
 
 /// Dropdown-style resource site selector with select-all and adult filter controls.
@@ -157,15 +158,20 @@ class ResourceDropdownPanel extends ConsumerWidget {
           const SizedBox(height: 10),
           Divider(color: colors.border, height: 1),
           const SizedBox(height: 10),
-          // ── Site pills (Wrap for multi-line flat layout) ──
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: sites.map((s) => _SitePill(
-              site: s,
-              isSelected: selected.contains(s.domain),
-              onTap: () => ref.read(searchProvider.notifier).toggleResource(s.domain),
-            )).toList(),
+          // ── Site pills (equal-width Wrap for multi-line flat layout) ──
+          // The panel applies 12px padding on all sides, so horizontalPadding
+          // must match to compute the correct available width.
+          EqualWidthSiteWrap(
+            itemCount: sites.length,
+            horizontalPadding: 12,
+            children: [
+              for (final s in sites)
+                _SitePill(
+                  site: s,
+                  isSelected: selected.contains(s.domain),
+                  onTap: () => ref.read(searchProvider.notifier).toggleResource(s.domain),
+                ),
+            ],
           ),
         ],
       ),
@@ -245,6 +251,7 @@ class _SitePill extends StatelessWidget {
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: isSelected ? activeColor.withValues(alpha: 0.15) : colors.elevated,
           borderRadius: BorderRadius.circular(AppTheme.radiusTag),
@@ -259,12 +266,18 @@ class _SitePill extends StatelessWidget {
               color: isSelected ? activeColor : colors.textMuted,
             ),
             const SizedBox(width: 4),
-            Text(
-              site.name,
-              style: TextStyle(
-                color: isSelected ? activeColor : colors.textSecondary,
-                fontSize: 12,
-                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+            Flexible(
+              child: Text(
+                site.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                softWrap: false,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: isSelected ? activeColor : colors.textSecondary,
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+                ),
               ),
             ),
           ],

@@ -149,8 +149,9 @@ func New(cfg Config, h *Handlers, authMid *middleware.NewAuthMiddleware, corsOri
 	resource.POST("/detail", h.Resource.Detail)
 	resource.POST("/paginate", h.Resource.Paginate)
 
-	// Resource image proxy (public - no token needed)
-	api.GET("/resource/image/proxy", h.Resource.ImageProxy)
+	// Resource image proxy (uses TempTokenAuth middleware)
+	// 相对路径/demo 本地封面图片通过该代理读取，需带临时 token 鉴权
+	api.GET("/resource/image/proxy", h.Resource.ImageProxy, middleware.NewTempTokenAuth(cacheInstance))
 
 	// Admin resource routes (admin required)
 	adminResource := api.Group("/admin/resource")
@@ -192,8 +193,10 @@ func New(cfg Config, h *Handlers, authMid *middleware.NewAuthMiddleware, corsOri
 	download.POST("/delete", h.Download.Delete)
 	download.POST("/retry", h.Download.Retry)
 	download.POST("/check", h.Download.Check)
-	// 流式播放已下载文件（需要 auth，通过 URL param 传递 task_id）
-	download.GET("/file/:id", h.Download.File)
+	// 流式播放已下载文件：使用临时 Token 认证（query param token），
+	// 因为 Artplayer 通过 video.src 加载，无法设置 Authorization header。
+	// 复用 stream proxy 的 TempTokenAuth 中间件，token 由前端 /api/token/temp 获取。
+	api.GET("/download/file/:id", h.Download.File, middleware.NewTempTokenAuth(cacheInstance))
 
 	// Admin download routes (admin required)
 	adminDownload := api.Group("/admin/download")

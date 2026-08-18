@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/theme/app_theme.dart';
 import 'favorite_star_button.dart';
+import 'marquee_text.dart';
 
 /// Video card widget — replaces MovieCard with design-spec aligned styling.
 class VideoCard extends StatefulWidget {
@@ -124,8 +125,8 @@ class _VideoCardState extends State<VideoCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        widget.title,
+                      MarqueeText(
+                        text: widget.title,
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: 13,
@@ -134,8 +135,7 @@ class _VideoCardState extends State<VideoCard> {
                             Shadow(color: Colors.black.withValues(alpha: 0.7), blurRadius: 4),
                           ],
                         ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                        staticMaxLines: 2,
                       ),
                       const SizedBox(height: 2),
                       Text(

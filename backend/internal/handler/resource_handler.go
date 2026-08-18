@@ -108,8 +108,12 @@ func (h *ResourceHandler) Search(c echo.Context) error {
 	// 设置 SSE 响应头
 	c.Response().Header().Set("Content-Type", "text/event-stream")
 	c.Response().Header().Set("Cache-Control", "no-cache")
-	c.Response().Header().Set("Connection", "keep-alive")
+	c.Response().Header().Set("X-Accel-Buffering", "no")
 	c.Response().WriteHeader(http.StatusOK)
+	// 立即下发响应头，避免客户端在首个事件到达前看不到任何响应
+	if flusher, ok := c.Response().Writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
 
 	// 流式推送事件
 	for event := range eventCh {

@@ -54,6 +54,12 @@ class QualityManager extends ChangeNotifier {
   /// 切换失败回调
   void Function(String message)? onSwitchFailed;
 
+  /// 当前 LAN IP（用于切换清晰度时生成代理 URL）。
+  ///
+  /// 非空时返回 LAN IP URL（投屏设备可访问），为空时回退 localhost。
+  /// 由 PlayerScreen 在每次切换前同步设置，确保与当前代理状态一致。
+  String lanIp = '';
+
   /// 连接状态订阅
   StreamSubscription<List<ConnectivityResult>>? _connectivitySubscription;
 
@@ -152,8 +158,8 @@ class QualityManager extends ChangeNotifier {
       // 4. 恢复/启动缓存
       await VideoCacheProxyServer.instance.resumeProxyCache(newCacheKey);
 
-      // 5. 获取代理 URL
-      final proxyUrl = VideoCacheProxyServer.instance.hlsProxyUrl(newCacheKey);
+      // 5. 获取代理 URL — 优先使用 LAN IP（投屏设备可访问），无 LAN IP 时回退 localhost
+      final proxyUrl = VideoCacheProxyServer.instance.hlsProxyUrl(newCacheKey, lanIp: lanIp);
 
       // 6. 模拟预缓存进度（实际 StreamSession 会后台下载分片）
       for (var i = 1; i <= 5; i++) {

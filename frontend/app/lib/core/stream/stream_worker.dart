@@ -294,7 +294,14 @@ class StreamWorker {
           break;
         }
 
-        appLogger.w('[Worker] 分片下载失败，重试中: workerId=$id, segment=$segmentIndex, attempt=$attempt/$maxSegmentRetries, error=$e');
+        // 还可重试（非最后一次）：退避后再试，避免对源站造成瞬时压力。
+        // 200ms × attempt → 200ms / 400ms（第三次为最后一次不退避）
+        if (attempt < maxSegmentRetries) {
+          final backoffMs = 200 * attempt;
+          appLogger.w('[Worker] 分片下载失败，重试中: workerId=$id, segment=$segmentIndex, '
+              'attempt=$attempt/$maxSegmentRetries, backoff=${backoffMs}ms, error=$e');
+          await Future.delayed(Duration(milliseconds: backoffMs));
+        }
       }
     }
 
@@ -387,7 +394,14 @@ class StreamWorker {
     if (error is TimeoutException) return true;
     if (error is SocketException) return true;
     if (error is HttpException) return true;
+    // SSL/TLS 握手失败：通常是中间网络设备重置连接造成的瞬时错误，可重试。
+    // 必须在字符串匹配之前判断类型（dart:io 的 HandshakeException）。
+    if (error is HandshakeException) return true;
     final msg = error.toString();
+    // 兜底：非 dart:io 类型（如被包装成普通 Exception）时按字符串匹配
+    if (msg.contains('HandshakeException')) return true;
+    if (msg.contains('TLS')) return true;
+    if (msg.contains('SSL')) return true;
     if (msg.contains('Connection refused')) return true;
     if (msg.contains('Connection reset')) return true;
     if (msg.contains('broken pipe')) return true;
@@ -395,6 +409,10 @@ class StreamWorker {
     if (msg.contains('HTTP 429')) return true;
     return false;
   }
+
+  /// 仅供单元测试使用的可重试错误判定入口。
+  /// 不要在业务代码中调用；测试通过此入口验证 [_isRetryableError] 名单覆盖。
+  static bool isRetryableErrorForTest(Object error) => _isRetryableError(error);
 }
 
 /// 优先级队列 — 对应后端 PriorityQueue（堆实现）

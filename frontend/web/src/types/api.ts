@@ -132,6 +132,7 @@ export interface UpdateUserReq {
   avatar?: string;
   role?: number;
   status?: number;
+  group_id?: number | null;
 }
 
 /** 重置密码请求 */
@@ -157,6 +158,8 @@ export interface UserListItem {
   avatar: string;
   role: number;
   status: number;
+  group_id?: number | null;
+  group_name?: string;
   last_login_at: string | null;
   created_at: string;
 }

@@ -308,6 +308,11 @@ func (s *UserGroupService) GetGroupName(ctx context.Context, groupID int64) stri
 	return group.Name
 }
 
+// GetGroupByID 获取用户组实体（用于存在性校验）
+func (s *UserGroupService) GetGroupByID(ctx context.Context, id int64) (*entity.UserGroup, error) {
+	return s.groupRepo.GetByID(ctx, id)
+}
+
 // getResourceCount 获取用户组关联资源数量
 func (s *UserGroupService) getResourceCount(ctx context.Context, groupID int64) (int, error) {
 	records, err := s.groupRepo.GetResourcesByGroupID(ctx, groupID)

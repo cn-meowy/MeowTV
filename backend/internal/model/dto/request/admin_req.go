@@ -6,6 +6,7 @@ type CreateUserReq struct {
 	Password string `json:"password" validate:"required,min=6,max=50"`
 	Nickname string `json:"nickname" validate:"omitempty,max=50"`
 	Role     *int8  `json:"role" validate:"omitempty,min=0,max=1"`
+	GroupID  *int64 `json:"group_id" validate:"omitempty"` // 所属用户组 ID，null 表示不分配
 }
 
 // UpdateUserReq 管理员编辑用户请求

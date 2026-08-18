@@ -106,79 +106,89 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
     return Scaffold(
       body: SafeArea(
-        child: Column(
-          children: [
+        bottom: false,
+        child: NestedScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          headerSliverBuilder: (context, innerBoxIsScrolled) => [
             // Search bar with resource trigger button on the left
-            Padding(
-              padding: const EdgeInsets.all(AppTheme.md),
-              child: Container(
-                height: AppTheme.inputHeight,
-                decoration: BoxDecoration(
-                  color: colors.card,
-                  borderRadius: BorderRadius.circular(AppTheme.radiusSearch),
-                  border: Border.all(color: colors.border),
-                ),
-                child: Row(
-                  children: [
-                    const ResourceDropdownWidget(compact: true),
-                    Container(
-                      width: 1,
-                      height: 20,
-                      color: colors.border,
-                    ),
-                    const SizedBox(width: 8),
-                    Icon(Icons.search, color: colors.textMuted, size: 20),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextField(
-                          controller: _controller,
-                          focusNode: _focusNode,
-                          onTap: () {
-                            if (!_isFocused) setState(() => _isFocused = true);
-                          },
-                          style: TextStyle(color: colors.textPrimary, fontSize: 15),
-                        decoration: InputDecoration(
-                          hintText: '输入关键词搜索...',
-                          hintStyle: TextStyle(color: colors.textMuted),
-                          border: InputBorder.none,
-                          enabledBorder: InputBorder.none,
-                          focusedBorder: InputBorder.none,
-                          contentPadding: EdgeInsets.zero,
-                          isDense: true,
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.all(AppTheme.md),
+                child: Container(
+                  height: AppTheme.inputHeight,
+                  decoration: BoxDecoration(
+                    color: colors.card,
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSearch),
+                    border: Border.all(color: colors.border),
+                  ),
+                  child: Row(
+                    children: [
+                      // 仅当存在多个资源站点时才显示资源选择器及分隔线，
+                      // 单一站点时隐藏，避免无意义的切换 UI。
+                      if (state.sites.length > 1) ...[
+                        const ResourceDropdownWidget(compact: true),
+                        Container(
+                          width: 1,
+                          height: 20,
+                          color: colors.border,
                         ),
-                        onSubmitted: _search,
-                        onChanged: _onSearchTextChanged,
-                        textInputAction: TextInputAction.search,
+                        const SizedBox(width: 8),
+                      ],
+                      Icon(Icons.search, color: colors.textMuted, size: 20),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: TextField(
+                            controller: _controller,
+                            focusNode: _focusNode,
+                            onTap: () {
+                              if (!_isFocused) setState(() => _isFocused = true);
+                            },
+                            style: TextStyle(color: colors.textPrimary, fontSize: 15),
+                          decoration: InputDecoration(
+                            hintText: '输入关键词搜索...',
+                            hintStyle: TextStyle(color: colors.textMuted),
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            contentPadding: EdgeInsets.zero,
+                            isDense: true,
+                          ),
+                          onSubmitted: _search,
+                          onChanged: _onSearchTextChanged,
+                          textInputAction: TextInputAction.search,
+                        ),
                       ),
-                    ),
-                    if (_controller.text.isNotEmpty)
-                      IconButton(
-                        icon: Icon(Icons.close, color: colors.textMuted, size: 18),
-                        onPressed: () {
-                          _controller.clear();
-                          _activeDoubanId = null;
-                          ref.read(searchProvider.notifier).cancelSearch();
-                          ref.read(searchProvider.notifier).clearDoubanId();
-                        },
-                      ),
-                    const SizedBox(width: 4),
-                  ],
+                      if (_controller.text.isNotEmpty)
+                        IconButton(
+                          icon: Icon(Icons.close, color: colors.textMuted, size: 18),
+                          onPressed: () {
+                            _controller.clear();
+                            _activeDoubanId = null;
+                            ref.read(searchProvider.notifier).cancelSearch();
+                            ref.read(searchProvider.notifier).clearDoubanId();
+                          },
+                        ),
+                      const SizedBox(width: 4),
+                    ],
+                  ),
                 ),
               ),
             ),
 
             // Resource selection panel
             if (state.isExpanded)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.md),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 240),
-                  child: SingleChildScrollView(
-                    child: AnimatedSize(
-                      duration: const Duration(milliseconds: 250),
-                      curve: Curves.easeInOut,
-                      alignment: Alignment.topCenter,
-                      child: const ResourceDropdownPanel(),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.md),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 240),
+                    child: SingleChildScrollView(
+                      child: AnimatedSize(
+                        duration: const Duration(milliseconds: 250),
+                        curve: Curves.easeInOut,
+                        alignment: Alignment.topCenter,
+                        child: const ResourceDropdownPanel(),
+                      ),
                     ),
                   ),
                 ),
@@ -186,23 +196,22 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
 
             // Search history chips below search bar
             if (state.searchHistory.isNotEmpty && _isFocused)
-              SearchHistoryChips(
-                history: state.searchHistory,
-                onTap: (t) {
-                  _controller.text = t;
-                  _activeDoubanId = null;
-                  ref.read(searchProvider.notifier).clearDoubanId();
-                  _search(t);
-                },
-                onClear: () => ref.read(searchProvider.notifier).clearSearchHistory(),
+              SliverToBoxAdapter(
+                child: SearchHistoryChips(
+                  history: state.searchHistory,
+                  onTap: (t) {
+                    _controller.text = t;
+                    _activeDoubanId = null;
+                    ref.read(searchProvider.notifier).clearDoubanId();
+                    _search(t);
+                  },
+                  onClear: () => ref.read(searchProvider.notifier).clearSearchHistory(),
+                ),
               ),
-
-            Expanded(
-              child: state.results.isEmpty && !state.isSearching
-                  ? _buildEmptyHint(state)
-                  : _buildResults(state),
-            ),
           ],
+          body: state.results.isEmpty && !state.isSearching
+              ? _buildEmptyHint(state)
+              : _buildResults(state),
         ),
       ),
     );
@@ -265,6 +274,17 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             ],
           ),
         ),
+        if (state.error != null && state.error!.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: AppTheme.md,
+              vertical: 4,
+            ),
+            child: Text(
+              state.error!,
+              style: TextStyle(color: colors.error, fontSize: 13),
+            ),
+          ),
         const SizedBox(height: 8),
         Expanded(child: _buildGroupedResults(state)),
       ],
@@ -280,7 +300,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
         groups.putIfAbsent(item.resourceDomain, () => []).add(item);
       }
       return ListView(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.md),
+        // body 在 SafeArea(bottom:true) 内，padding.bottom 已被消耗为 0，
+        // 此处只需补足导航栏高度
+        padding: EdgeInsets.fromLTRB(AppTheme.md, 0, AppTheme.md, AppTheme.tabBarHeight + MediaQuery.of(context).padding.bottom),
         children: groups.entries.map((e) => Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -305,7 +327,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
                   final proxyState = ref.watch(doubanImageProxyProvider);
                   ref.read(doubanImageProxyProvider.notifier).checkAndRefresh();
                   final baseUrl = ref.read(apiClientProvider).baseUrl;
-                  final imgProxyUrl = proxyState.buildImageUrl(item.cover ?? '', baseUrl);
+                  final imgProxyUrl = proxyState.resolveImageUrl(item.cover ?? '', baseUrl) ?? '';
                   final imgHeaders = proxyState.httpHeadersForUrl(item.cover ?? '');
                   return VideoCard(
                     title: item.title,
@@ -340,7 +362,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
       final groupEntries = state.groupedResults.entries.toList();
 
       return GridView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: AppTheme.md),
+        padding: EdgeInsets.fromLTRB(AppTheme.md, 0, AppTheme.md, AppTheme.tabBarHeight + MediaQuery.of(context).padding.bottom),
         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: MediaQuery.of(context).size.width > 600 ? 4 : 3,
           childAspectRatio: AppTheme.cardWidth / 210,
@@ -359,7 +381,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
             (i) => i.cover != null && i.cover!.isNotEmpty,
             orElse: () => first,
           ).cover ?? '';
-          final imgProxyUrl = proxyState.buildImageUrl(cover, baseUrl);
+          final imgProxyUrl = proxyState.resolveImageUrl(cover, baseUrl) ?? '';
           final imgHeaders = proxyState.httpHeadersForUrl(cover);
 
           return NameGroupedCard(

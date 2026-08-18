@@ -23,5 +23,6 @@ type App struct {
 	ResourceImageService *service.ResourceImageService
 	DownloadService      *service.DownloadService
 	StreamService        *service.StreamService
+	LocalDataService     *service.LocalDataService
 	Handlers             *router.Handlers
 }

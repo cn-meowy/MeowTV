@@ -43,7 +43,17 @@ dependencies:
 
   # Logging
   logger: ^2.5.0
-  dart_cast: ^0.6.0
+  # Casting (Chromecast / AirPlay / DLNA) with built-in HTTP media proxy.
+  # 上游 dart_cast 0.6.0 的 MediaProxy 在 HLS/字幕重写门槛处要求
+  # statusCode == 200，当 DLNA 渲染器（libmpv）发 Range 头导致上游返回 206
+  # 时重写被跳过，原始 m3u8 相对路径透传给 TV → 404 死循环。使用本地补丁
+  # 版本接受 206 并在重写后强制 200，见 third_party/dart_cast/LOCAL_PATCHES.md。
+  dart_cast:
+    path: ./third_party/dart_cast
+  # mDNS 多播组播客户端：dart_cast 间接依赖。app 启动期 LocalNetworkProbe
+  # 直接用它发一次无害探针，触发 iOS 14+ "本地网络"系统授权弹窗。
+  multicast_dns: ^0.3.2+6
+  http: ^1.2.0
 
   # QR code scanner (camera)
   mobile_scanner: ^7.0.0
@@ -58,7 +68,10 @@ dependencies:
   volume_controller: ^3.0.0
 
   # Picture-in-Picture (Android + iOS)
-  fl_pip: ^3.2.3
+  # 上游 fl_pip 3.2.3 在 Flutter ≥ 3.27 下编译失败（FlutterViewController.engine 已改为非可选），
+  # 维护者尚未发布修复（见 Wayaer/fl_pip#33）。使用本地补丁版本，见 third_party/fl_pip/LOCAL_PATCHES.md。
+  fl_pip:
+    path: ./third_party/fl_pip
 
   # XML parsing (Bilibili danmaku XML)
   xml: ^6.5.0

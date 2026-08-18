@@ -7,11 +7,12 @@ import 'package:go_router/go_router.dart';
 import 'package:video_player/video_player.dart';
 import 'package:chewie/chewie.dart';
 import 'package:screen_brightness/screen_brightness.dart';
-import 'package:dart_cast/dart_cast.dart';
+import 'package:dart_cast/dart_cast.dart' hide SessionState;
 import '../../core/logger/app_logger.dart';
 import '../../core/theme/app_theme.dart' show BuildContextThemeX;
 import '../../core/network/api_client.dart';
 import '../../core/network/api_constants.dart';
+import '../../core/utils/error_message.dart';
 import '../../shared/models/resource_detail.dart';
 import '../../shared/models/enums.dart';
 import '../download/download_provider.dart';
@@ -23,6 +24,7 @@ import '../settings/aspect_ratio_provider.dart';
 import '../detail/m3u8_check_provider.dart';
 import '../../core/cache/play_cache_service.dart';
 import '../../core/cache/video_cache_proxy.dart';
+import '../../core/stream/stream_config.dart';
 import '../../core/cache/cache_meta.dart';
 import 'widgets/player_controls/sleep_timer_provider.dart';
 import '../../core/cache/play_cache_download_service.dart';
@@ -77,6 +79,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   Timer? _bufferingTimeout;
   Timer? _errorDelayTimer;  // 错误确认延迟计时器，用于可重试错误的去重
   Timer? _autoRetryTimer;   // 自动重试定时器
+  Timer? _castLoadingWatchdog;  // 投屏加载兜底超时器：TV 一直转圈时自动断开
   VoidCallback? _videoListener;
 
   // ── 自动重试与线路切换状态 ──
@@ -104,6 +107,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   // ── 画面比例 ──
   final ValueNotifier<ChewieController?> _chewieControllerNotifier = ValueNotifier(null);
+  /// 当前视频的初始画面比例（每个视频从自适应开始）。
+  DisplayAspectRatio _videoInitialRatio = DisplayAspectRatio.autoAdapt;
+  /// 每个视频仅按 autoAdapt 重算一次真实比例（VPC 就绪后）。
+  bool _autoAdaptApplied = false;
 
   // ── 本地下载检查状态 ──
   String? _localFileUrl;          // 已下载文件的服务器流 URL
@@ -124,6 +131,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// 用户主动断开投屏标志（区分用户操作与设备意外断线）
   bool _userInitiatedDisconnect = false;
 
+  /// 投屏是否曾成功连接过（区分"连接/加载失败"与"设备意外断线"）。
+  /// 仅在曾连接成功后才允许 _listenCastState 走"意外断线回退"路径，
+  /// 避免连接失败时用 castPosition=0 覆盖本地断点。
+  bool _castEverConnected = false;
+
+  /// 投屏启动前记录的本地播放位置，连接/加载失败时用于恢复本地断点。
+  Duration _lastLocalPosition = Duration.zero;
+
   /// 投屏状态变化订阅
   StreamSubscription<CastState>? _castStateSub;
 
@@ -132,6 +147,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   late final AudioTrackManager _audioTrackManager;
   late final MediaCaptureManager _captureManager;
   late final HistoryNotifier _historyNotifier;
+  late final MeowCastService _castService;
 
   @override
   void initState() {
@@ -141,6 +157,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _audioTrackManager = ref.read(audioTrackManagerProvider);
     _captureManager = ref.read(captureManagerProvider);
     _historyNotifier = ref.read(historyProvider.notifier);
+    _castService = ref.read(castServiceProvider);
     appLogger.i('[Player] 初始化索引：sourceIndex=${widget.sourceIndex}, epIndex=${widget.epIndex}');
     _currentSourceIndex = widget.sourceIndex;
     _currentEpIndex = widget.epIndex;
@@ -152,21 +169,46 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   /// 监听投屏状态变化，设备意外断线时自动回退本地播放
   void _listenCastState() {
-    final castService = ref.read(castServiceProvider);
+    final castService = _castService;
     _castStateSub = castService.stateStream.listen((castState) {
       if (!mounted) return;
 
-      // 设备意外断线（非用户主动断开）：自动回退本地播放
-      if (castState == CastState.disconnected && !_userInitiatedDisconnect) {
+      // 连接中/已连接/加载中 — 投屏建立过程的状态，不视为意外断线
+      if (castState == CastState.connecting ||
+          castState == CastState.connected ||
+          castState == CastState.loading) {
+        return;
+      }
+
+      // P3：投屏状态进入 playing/paused/buffering/disconnected，
+      // 取消加载兜底超时器（避免与正常播放流程或意外断线回退路径竞态）。
+      if (castState == CastState.playing ||
+          castState == CastState.paused ||
+          castState == CastState.buffering ||
+          castState == CastState.disconnected) {
+        _cancelCastLoadingWatchdog();
+      }
+
+      // 设备意外断线（非用户主动断开 且 曾成功连接过）：自动回退本地播放。
+      // _castEverConnected 守卫：连接/加载失败时 cast_service 已静默不广播，
+      // 此处作为双重保险，避免任何 stray disconnected 用 castPosition=0 覆盖本地断点。
+      if (castState == CastState.disconnected && !_userInitiatedDisconnect && _castEverConnected) {
+        _castEverConnected = false;
         final castPosition = castService.castPosition;
-        appLogger.i('[Player] 投屏设备意外断线，自动回退本地播放，断点位置: $castPosition');
+        final deviceTag = castService.connectedDevice == null
+            ? '<unknown>'
+            : _deviceTag(castService.connectedDevice!);
+        appLogger.i(
+            '[Player] 投屏设备意外断线, 自动回退本地播放, 断点=$castPosition $deviceTag');
 
         // 从远端最后位置恢复本地播放
         if (castPosition.inMilliseconds > 0 && _chewieController != null) {
           _chewieController!.seekTo(castPosition);
+          _chewieController!.videoPlayerController.setVolume(1.0);
           _chewieController!.play();
           ref.read(danmakuControllerProvider).play();
         } else {
+          _chewieController?.videoPlayerController.setVolume(1.0);
           _chewieController?.play();
           ref.read(danmakuControllerProvider).play();
         }
@@ -180,9 +222,14 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         );
       }
 
-      // 重置用户主动断开标志
+      // 投屏已彻底结束，重置"曾连接"标志，避免残留影响下一次投屏判定。
+      // 注意：不在此处重置 _userInitiatedDisconnect —— 该标志由 _startCasting
+      // 入口在每轮新投屏启动时清零。若在此处重置，会在 _stopCasting →
+      // castService.disconnect() → _updateState(disconnected) 的同步链路中
+      // 提前清掉，导致 _startCasting 的 post-await 检查读到 stale 值而误报
+      // "投屏失败"（plan 1786717587976 缺陷 A）。
       if (castState == CastState.disconnected) {
-        _userInitiatedDisconnect = false;
+        _castEverConnected = false;
       }
     });
   }
@@ -190,6 +237,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
   /// 初始化播放器
   Future<void> _initPlayer() async {
     if (mounted) setState(() { _isPlayerInitialized = true; });
+
+    // 新资源 / 新 PlayerScreen：重置画面比例为默认（自适应），避免跨资源残留
+    _resetRatioForNewVideo();
 
     // 设置定时关闭回调：到达指定时间后暂停播放并提示
     ref.read(sleepTimerProvider.notifier).setOnExpired(() {
@@ -234,12 +284,16 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (bufferState.mode == BufferMode.strategyA) {
         appLogger.i('[Player] 方案A 缓冲模式，当前使用默认缓冲');
       }
+      // 确保临时 Token 就绪：download/file 路由只接受临时 Token（iOS AVPlayer
+      // 无法注入 Authorization header），若 token 未就绪会导致 401。
+      // init() 内部仅在后端代理模式且 token 过期/为空时才刷新，开销极小。
+      await ref.read(doubanImageProxyProvider.notifier).init();
       // 先检查本地下载，完成后再播放
       await _checkLocalDownload();
       _playCurrentEpisode();
     } catch (e, stackTrace) {
       appLogger.e('[Player] 加载资源详情失败', error: e, stackTrace: stackTrace);
-      if (mounted) setState(() { _isLoadingDetail = false; _errorMessage = '加载资源详情失败: $e'; });
+      if (mounted) setState(() { _isLoadingDetail = false; _errorMessage = extractErrorMessage(e); });
     }
   }
 
@@ -290,6 +344,13 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           _currentEpIndex,
         );
 
+        // 切集/切线路时先注销旧集 session：旧调度器若仍在跑，
+        // 会继续整集后台下载（exit 后无人停止），造成流量/磁盘浪费。
+        // 磁盘缓存保留，回切同集时 isAllDone 短路为 completed 仍能命中。
+        // unregister 对不存在的 key 幂等（_sessions.remove null-safe），安全。
+        if (_currentCacheKey != null && _currentCacheKey != cacheKey) {
+          VideoCacheProxyServer.instance.unregister(_currentCacheKey!);
+        }
         // 存储 cacheKey 供重试/切换线路时 unregister 旧 session
         _currentCacheKey = cacheKey;
 
@@ -319,7 +380,17 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         // 3. 避免 _isHlsUrl() 误判导致 ExoPlayer UnrecognizedInputFormatException
         //    （/proxy/ 路由返回 m3u8 文本时，ExoPlayer 的 ProgressiveMediaSource
         //     无法识别，而 /hls/ 路由返回的 m3u8 会被 HLS 解析器正确处理）
-        url = VideoCacheProxyServer.instance.hlsProxyUrl(cacheKey);
+        // 优先使用 LAN IP URL（AirPlay 时 Apple TV 需可达，本机经 LAN IP 访问
+        // 也等价，m3u8 重写按请求 Host 自适应），无 LAN IP 时回退 localhost。
+        // 先确保代理配置已加载，selectedIp 才可能非空。
+        await ref.read(castProxyProvider.notifier).ensureLoaded();
+        final lanIp = ref.read(castProxyProvider).selectedIp;
+        url = VideoCacheProxyServer.instance.hlsProxyUrl(cacheKey, lanIp: lanIp);
+
+        // 记录远程原始 URL 供投屏使用
+        // 方案B本地播放走 localhost 代理，投屏设备无法访问；
+        // 投屏时优先用 LAN 代理 URL（若开启），否则回退到此远程原始 URL
+        _currentCastUrl = episode.url;
 
         // 初始化清晰度管理器
         // 注意：StreamSession 在视频播放器首次请求 /hls/{cacheKey} 时才异步创建，
@@ -389,6 +460,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         formatHint: isUsingProxyCache ? VideoFormat.hls : null,
       );
       _videoPlayerController = vpc;
+      // 新 VPC：重置 autoAdapt 重算标志，待 isInitialized 时按真实比例重算
+      _autoAdaptApplied = false;
 
       _videoListener = () {
         if (!mounted) return;
@@ -396,8 +469,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
         // 缓冲状态
         final isBuffering = value.isBuffering;
-        appLogger.i('[Player] videoListener 事件: buffering=$isBuffering (之前: $_isBuffering)');
         if (isBuffering != _isBuffering) {
+          appLogger.i('[Player] videoListener 事件: buffering=$isBuffering (之前: $_isBuffering)');
           setState(() => _isBuffering = isBuffering);
           if (isBuffering) {
             appLogger.i('[Player] 开始缓冲，启动缓冲超时');
@@ -428,6 +501,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
                 await ref.read(audioTrackManagerProvider).fetchTracks(vpc);
               }
             });
+          }
+
+          // autoAdapt 首次就绪后按视频真实比例重算（原始比例不可得时回退 16:9）。
+          // 仅当当前比例仍为 autoAdapt 才重算，避免覆盖用户已手动选择的比例。
+          // cc 可能在首次 isInitialized tick 时仍为 null（listener 先于
+          // ChewieController 构造注册），故需 null 守卫。
+          if (!_autoAdaptApplied) {
+            final cc = _chewieController;
+            if (cc != null) {
+              _autoAdaptApplied = true;
+              if (ref.read(displayAspectRatioProvider) == DisplayAspectRatio.autoAdapt) {
+                _onAspectRatioChange(DisplayAspectRatio.autoAdapt);
+              }
+            }
           }
         }
 
@@ -460,7 +547,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         // 续播时禁用 autoPlay：避免从位置 0 开始播放后再 seek 导致的竞争问题
         // seek 完成后由 _applyResumeSeek 手动调用 play()
         autoPlay: _resumePositionSeconds == null,
-        aspectRatio: 16 / 9,
+        aspectRatio: _computeAspectRatioForInit(
+          ref.read(displayAspectRatioProvider),
+          vpc,
+        ),
         showControls: false,
         allowedScreenSleep: false,
         allowFullScreen: false,
@@ -579,6 +669,8 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
         formatHint: VideoFormat.hls,
       );
       _videoPlayerController = vpc;
+      // 新 VPC：重置 autoAdapt 重算标志（同视频，不重置用户当前比例）
+      _autoAdaptApplied = false;
 
       _videoListener = () {
         if (!mounted) return;
@@ -601,6 +693,18 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             value.position,
             Size(value.size.width, value.size.height),
           );
+
+          // autoAdapt 首次就绪后按视频真实比例重算（原始比例不可得时回退 16:9）。
+          // 清晰度切换为同视频：保留用户当前比例，仅在仍为 autoAdapt 时重算。
+          if (!_autoAdaptApplied) {
+            final cc = _chewieController;
+            if (cc != null) {
+              _autoAdaptApplied = true;
+              if (ref.read(displayAspectRatioProvider) == DisplayAspectRatio.autoAdapt) {
+                _onAspectRatioChange(DisplayAspectRatio.autoAdapt);
+              }
+            }
+          }
         }
 
         // 错误处理
@@ -633,6 +737,10 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       // 创建新的 ChewieController
       _chewieController = ChewieController(
         videoPlayerController: vpc,
+        aspectRatio: _computeAspectRatioForInit(
+          ref.read(displayAspectRatioProvider),
+          vpc,
+        ),
         showControls: false,
         allowedScreenSleep: false,
       );
@@ -664,6 +772,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       if (session.m3u8Info.isMaster && session.m3u8Info.variants.isNotEmpty) {
         _qualityManager ??= ref.read(qualityManagerProvider);
         _qualityManager!.reset();
+        _qualityManager!.lanIp = ref.read(castProxyProvider).selectedIp;
         _qualityManager!.initialize(
           masterInfo: session.m3u8Info,
           cacheKey: cacheKey,
@@ -889,13 +998,20 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
       if (resp != null && resp.found && resp.taskId > 0 && resp.fileFormat == 'mp4') {
         appLogger.i('[Player] 本地 MP4 文件已找到, task_id: ${resp.taskId}');
-        final fileUrl = await downloadNotifier.getDownloadFileUrl(resp.taskId);
-        if (seq != _checkDownloadSeq || !mounted) return;
-        setState(() {
-          _localFileUrl = fileUrl;
-          _localFileFormat = 'mp4';
-          _checkingLocal = false;
-        });
+        try {
+          final fileUrl = await downloadNotifier.getDownloadFileUrl(resp.taskId);
+          if (seq != _checkDownloadSeq || !mounted) return;
+          setState(() {
+            _localFileUrl = fileUrl;
+            _localFileFormat = 'mp4';
+            _checkingLocal = false;
+          });
+        } on StateError catch (e) {
+          // 临时 Token 不可用（temp_token_unavailable）：回退到远程流播放
+          if (seq != _checkDownloadSeq || !mounted) return;
+          appLogger.w('[Player] 获取临时 Token 失败，回退远程流: ${e.message}');
+          _resetLocalState();
+        }
       } else if (resp != null && resp.found && resp.fileFormat == 'ts') {
         appLogger.i('[Player] 本地文件为 TS 格式，回退远程流, task_id: ${resp.taskId}');
         setState(() {
@@ -1003,6 +1119,9 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
       appLogger.i('[Player] _selectEpisode setState 完成: 新索引 sourceIndex=$_currentSourceIndex, epIndex=$_currentEpIndex');
     });
 
+    // 切集 / 上下集 / 自动连播 / 自动切线路：重置画面比例为默认（自适应），比例不跨视频持久化
+    _resetRatioForNewVideo();
+
     // 投屏中切集：在远端加载新媒体，不重建本地播放器
     final castService = ref.read(castServiceProvider);
     if (castService.isCasting) {
@@ -1026,23 +1145,86 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     // 更新标题
     _playerTitle = _playerTitleComputed;
 
-    // 使用远程原始 URL（非本机代理地址）
-    final castUrl = episode.url;
-    _currentCastUrl = castUrl;
-
-    if (castUrl.isEmpty) {
+    if (episode.url.isEmpty) {
       appLogger.w('[Player] 投屏切集：无可用的远程 URL');
       return;
     }
 
+    // 记录远程原始 URL 供投屏兜底使用
+    _currentCastUrl = episode.url;
+
+    final castService = ref.read(castServiceProvider);
+    final connectedDevice = castService.connectedDevice;
+    final isDlna = connectedDevice?.protocol == CastProtocol.dlna;
+
+    // 切集续投：方案B 走 LAN 代理（与 _startCasting 一致），确保：
+    // 1. 走 app 缓存 + 防盗链头（远程原始 URL 直投会被 origin 403 拦截分片）
+    // 2. DLNA 走方案A（type=mp4 直链透传 m3u8），TV 原生 seek/算时长
+    // 方案A 投屏切集：直接透传新集远程原始 URL，不启动 LAN 代理（与 _startCasting 对齐），
+    // 让 TV 端独立拉取新集 m3u8。显式置空 _currentCacheKey 避免上一集残留。
+    String castUrl = episode.url;
+    var epDuration = Duration.zero;
+    final bufferMode = ref.read(bufferModeProvider).mode;
+    await ref.read(castProxyProvider.notifier).ensureLoaded();
+    final castProxyState = ref.read(castProxyProvider);
+    final detail = _detail;
+    if (bufferMode == BufferMode.strategyB &&
+        castProxyState.enabled &&
+        castProxyState.selectedIp.isNotEmpty &&
+        detail != null) {
+      // 计算新集的 cacheKey 并注册到代理
+      final newCacheKey = PlayCacheService.instance.cacheKey(
+        detail.resourceDomain,
+        widget.vodId,
+        _currentSourceIndex,
+        _currentEpIndex,
+      );
+
+      // 失效旧集 session（避免 _sessions 复用旧数据），更新 _currentCacheKey
+      if (_currentCacheKey != null && _currentCacheKey != newCacheKey) {
+        VideoCacheProxyServer.instance.unregister(_currentCacheKey!);
+      }
+      _currentCacheKey = newCacheKey;
+
+      try {
+        await VideoCacheProxyServer.instance.register(newCacheKey, episode.url);
+        await VideoCacheProxyServer.instance.startLan();
+
+        // 主动预创建 session（解析 m3u8），确保 duration 可用
+        final session = await VideoCacheProxyServer.instance.ensureSession(newCacheKey);
+        if (session != null) {
+          final ms = (session.m3u8Info.duration * 1000).round();
+          if (ms > 0) epDuration = Duration(milliseconds: ms);
+        }
+
+        castUrl = VideoCacheProxyServer.instance.lanHlsProxyUrl(newCacheKey, castProxyState.selectedIp);
+        appLogger.i('[Player] 投屏切集走 LAN 代理: cacheKey=$newCacheKey, castUrl=$castUrl');
+
+        // 预热新集起始分片
+        _prewarmCastCache(Duration.zero);
+      } catch (e) {
+        appLogger.e('[Player] 投屏切集 LAN 代理失败，回退远程 URL', error: e);
+        castUrl = episode.url;
+      }
+    } else {
+      // 方案A 投屏切集：直接使用远程原始 URL，显式清理 cacheKey
+      _currentCacheKey = null;
+      appLogger.i('[Player] 投屏切集直接使用远程 URL: castUrl=$castUrl, bufferMode=${bufferMode.name}');
+    }
+
+    // DLNA 用方案A：type=mp4 让 DlnaSession 走直链透传而非 HLS→TS 转换
+    final castType = isDlna ? CastMediaType.mp4 : _detectCastMediaType(castUrl);
+
     final media = CastMedia(
       url: castUrl,
-      type: _detectCastMediaType(castUrl),
+      type: castType,
+      httpHeaders: _castHttpHeaders(episode.url),
       title: _playerTitle,
+      duration: epDuration.inMilliseconds > 0 ? epDuration : null,
     );
 
-    appLogger.i('[Player] 投屏切集: url=$castUrl, title=$_playerTitle');
-    final castService = ref.read(castServiceProvider);
+    appLogger.i('[Player] 投屏切集: url=$castUrl, type=${castType.name}, '
+        'duration=$epDuration, title=$_playerTitle');
     await castService.loadMedia(media);
 
     // 更新本地播放历史
@@ -1417,6 +1599,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           onSwitchFullscreenMode: _switchFullscreenMode,
           onUserSeek: _onUserSeek,
           onAspectRatioChange: _onAspectRatioChange,
+          onResetAspectRatio: _onResetAspectRatio,
           onCastDevice: _startCasting,
           onCastDisconnect: _stopCasting,
           onPreviousEpisode: () => _selectEpisode(_currentSourceIndex, _currentEpIndex - 1),
@@ -1445,6 +1628,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
           onSwitchFullscreenMode: _switchFullscreenMode,
           onUserSeek: _onUserSeek,
           onAspectRatioChange: _onAspectRatioChange,
+          onResetAspectRatio: _onResetAspectRatio,
           onCastDevice: _startCasting,
           onCastDisconnect: _stopCasting,
           onPreviousEpisode: () => _selectEpisode(_currentSourceIndex, _currentEpIndex - 1),
@@ -1492,10 +1676,27 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     setState(() {});
   }
 
+  /// 切换到新视频时重置画面比例为默认（自适应）。
+  ///
+  /// 比例状态不跨视频持久化：每个视频从自适应开始，
+  /// 视频原始比例不可得时回退 16:9（见 _computeAspectRatioForInit）。
+  void _resetRatioForNewVideo() {
+    _videoInitialRatio = DisplayAspectRatio.autoAdapt;
+    _autoAdaptApplied = false;
+    ref.read(displayAspectRatioProvider.notifier).setRatio(DisplayAspectRatio.autoAdapt);
+  }
+
+  /// 还原到当前视频初始比例（自适应）。
+  void _onResetAspectRatio() {
+    ref.read(displayAspectRatioProvider.notifier).setRatio(_videoInitialRatio);
+    _onAspectRatioChange(_videoInitialRatio);
+  }
+
   @override
   void dispose() {
     _castStateSub?.cancel();
     _cancelBufferingTimeout();
+    _cancelCastLoadingWatchdog();
     _errorDelayTimer?.cancel();
     _autoRetryTimer?.cancel();
     // 退出前最后一次上报进度（fire-and-forget，Dio 请求不依赖 widget 生命周期）
@@ -1507,7 +1708,11 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     _progressTimer?.cancel();
     _chewieControllerNotifier.dispose();
     // 暂停所有活跃的自动缓存（标记为 paused，不影响手动缓存）
-    VideoCacheProxyServer.instance.pauseActiveProxying();
+    // 投屏中（TV 正在通过手机代理拉流）保留当前投屏 session 继续预下载，
+    // 其余 session 全部暂停，避免退出播放页后后台仍下载整集。
+    VideoCacheProxyServer.instance.pauseActiveProxying(
+      exceptKey: _castService.isCasting ? _currentCacheKey : null,
+    );
     // 停止所有方案B后台缓存下载
     PlayCacheDownloadService.instance.stopAutoDownloads();
     // 恢复系统自动亮度（用户可能在播放器中手动调节了亮度）
@@ -1609,6 +1814,7 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
             onSwitchFullscreenMode: _switchFullscreenMode,
             onUserSeek: _onUserSeek,
             onAspectRatioChange: _onAspectRatioChange,
+            onResetAspectRatio: _onResetAspectRatio,
             onCastDevice: _startCasting,
             onCastDisconnect: _stopCasting,
             title: _playerTitle,
@@ -1672,55 +1878,313 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
 
   /// 投屏启动：暂停本地播放，记录断点位置，连接远端设备并从断点续投
   Future<void> _startCasting(CastDevice device) async {
-    appLogger.i('[Player] 投屏启动: device=${device.name}');
+    appLogger.i('[Player] _startCasting 入口 ${_deviceTag(device)}');
 
     // 1. 记录当前本地播放位置（断点续投）
     final currentPosition = _videoPlayerController?.value.position ?? Duration.zero;
+    appLogger.d('[Player] 记录本地断点: position=$currentPosition, '
+        'duration=${_videoPlayerController?.value.duration}');
+    // 保存本地断点，供连接/加载失败时恢复（不依赖 listener 触发）
+    _lastLocalPosition = currentPosition;
+    // 重置"曾连接"标志：本次尝试尚未成功建立会话
+    _castEverConnected = false;
+    // 重置"用户主动断开"标志：新一轮投屏开始，清掉上一轮残留状态。
+    // 仅在此处清零，避免 _listenCastState 在 disconnect 同步链路中提前清掉
+    // 导致 _startCasting post-await 检查读到 stale 值（plan 1786717587976 3.1）。
+    _userInitiatedDisconnect = false;
 
-    // 2. 暂停本地播放
+    // 2. 暂停本地播放并静音（防止音频残留）
     _chewieController?.pause();
+    _chewieController?.videoPlayerController.setVolume(0);
     ref.read(danmakuControllerProvider).pause();
-    appLogger.i('[Player] 本地播放已暂停，断点位置: $currentPosition');
+    appLogger.i('[Player] 本地播放已暂停并静音，断点位置: $currentPosition');
 
     // 3. 构建投屏媒体 URL
-    //    - 代理模式启用 + 当前使用方案B代理缓存：启动 LAN 代理，使用 LAN IP URL
-    //    - 否则：使用远程原始 URL
+    //    - 方案B（边播边下）+ 代理模式启用：启动 app 自己的 LAN 代理（VideoCacheProxyServer），
+    //      把代理 URL 投给 TV；app 代理负责本地分片缓存 + 防盗链头转发。
+    //    - 方案A（HLS 标准缓冲）：走 dart_cast strategyA 短路（`media.directUrl=true`），
+    //      把远程原始 m3u8 URL 直接给 TV，由 TV 端原生播放器拉取。不启动 dart_cast 内置
+    //      MediaProxy（无需 URL 重写），不发 RTSP（避免 dart_cast 假身份 SETUP 失败）。
+    //    适用：源站无防盗链、TV 与公网可达。防盗链源应切 strategyB。
     String castUrl = _currentCastUrl;
-    final castProxyState = ref.read(castProxyProvider);
-    if (castProxyState.enabled && castProxyState.selectedIp.isNotEmpty && _currentCacheKey != null) {
-      try {
-        // 启动 LAN 代理服务器（绑定 0.0.0.0）
-        await VideoCacheProxyServer.instance.startLan();
-        final lanIp = castProxyState.selectedIp;
-        castUrl = VideoCacheProxyServer.instance.lanHlsProxyUrl(_currentCacheKey!, lanIp);
-        appLogger.i('[Player] 投屏使用代理模式: lanIp=$lanIp, castUrl=$castUrl');
-      } catch (e) {
-        appLogger.e('[Player] LAN 代理启动失败，回退使用远程 URL', error: e);
-        castUrl = _currentCastUrl;
+    final castProxyNotifier = ref.read(castProxyProvider.notifier);
+    await castProxyNotifier.ensureLoaded();
+    var castProxyState = ref.read(castProxyProvider);
+    final bufferMode = ref.read(bufferModeProvider).mode;
+
+    if (bufferMode == BufferMode.strategyB) {
+      // 若有可用 LAN IP 但代理模式未启用，自动启用。
+      // 重要：dart_cast 内部 MediaProxy 会将 HLS m3u8 转换为连续 MPEG-TS 流，
+      // 其对每个分片直接 GET（不带原 Referer/防盗链头部）。
+      // 走远程原始 URL 时很多 origin（如 B 站）会 403，导致 dart_cast 静默跳过失败分片，
+      // 表现就是 TV 只能播放第一个分片然后停止。
+      // 走 LAN 代理后由 VideoCacheProxyServer 统一转发请求头 + 已缓存分片直返，规避该问题。
+      if (!castProxyState.enabled &&
+          castProxyState.availableIps.isNotEmpty &&
+          _currentCacheKey != null) {
+        // selectedIp 可能为空（无保存 IP 且检测失败），用 availableIps.first 兜底。
+        // 注意：不可依赖 selectedIp.isEmpty 判断"未选中"——CastProxyNotifier._loadSettings
+        // 在有网卡 IP 时总会自动选中，导致 isEmpty 恒为 false，旧条件永不触发。
+        final ip = castProxyState.selectedIp.isNotEmpty
+            ? castProxyState.selectedIp
+            : castProxyState.availableIps.first;
+        await castProxyNotifier.selectIp(ip);
+        await castProxyNotifier.setEnabled(true);
+        castProxyState = ref.read(castProxyProvider);
+        appLogger.i('[Player] 投屏时自动启用代理: ip=${castProxyState.selectedIp}');
       }
+
+      if (castProxyState.enabled && castProxyState.selectedIp.isNotEmpty && _currentCacheKey != null) {
+        try {
+          // 投屏前主动预创建 StreamSession（解析 m3u8），确保后续
+          // getSession 不返回 null —— duration 兜底与 _prewarmCastCache 均依赖它。
+          // StreamSession 正常在播放器首次请求 /hls/{cacheKey} 时才异步创建，
+          // 投屏刚启动时可能尚未创建。
+          await VideoCacheProxyServer.instance.ensureSession(_currentCacheKey!);
+
+          // 启动 LAN 代理服务器（绑定 0.0.0.0）
+          await VideoCacheProxyServer.instance.startLan();
+          final lanIp = castProxyState.selectedIp;
+          // DLNA 投屏与本地播放器走同一 /hls/ 路由：cast_service 已用
+          // _DlnaDirectMediaTransformer 让 dart_cast 透传 app 代理 URL，
+          // TV 端通过 /hls-key/ 自行拉取 AES-128 key 并解密密文分片。
+          castUrl = VideoCacheProxyServer.instance.hlsProxyUrl(_currentCacheKey!, lanIp: lanIp);
+          appLogger.i('[Player] 投屏使用代理模式: lanIp=$lanIp, castUrl=$castUrl');
+
+          // 预热分片缓存：dart_cast 会按顺序 GET 每个分片，任何一次失败都会
+          // 导致流提前结束（hls_stream_proxy.dart 静默 catch）。将当前位置后的
+          // 连续若干分片标记为紧急下载，确保 dart_cast 请求时命中已缓存数据。
+          _prewarmCastCache(currentPosition);
+        } catch (e) {
+          appLogger.e('[Player] LAN 代理启动失败，回退使用远程 URL', error: e);
+          castUrl = _currentCastUrl;
+        }
+      }
+    } else {
+      // strategyA：透传远程 m3u8 URL，TV 端原生播放器处理。
+      // plan 1786379911231 §1.4 / 任务 1：方案A 投屏不走 LAN 代理。
+      appLogger.i('[Player] 投屏直接使用远程 URL: castUrl=$castUrl, bufferMode=strategyA');
     }
+
+    appLogger.d('[Player] 投屏 URL: $castUrl, bufferMode=${bufferMode.name}');
 
     if (castUrl.isEmpty) {
       appLogger.w('[Player] 无可投屏的 URL');
+      // 恢复本地播放，保留断点位置，避免本地被暂停后无法继续
+      _chewieController?.videoPlayerController.setVolume(1.0);
+      _chewieController?.play();
+      ref.read(danmakuControllerProvider).play();
+      // 标记用户主动断开，防止 _listenCastState 用 castPosition=0 覆盖本地断点
+      _userInitiatedDisconnect = true;
       return;
     }
 
+    // 计算总时长：优先使用本地 VPC，兜底使用 proxy session 的 m3u8 累计时长。
+    // 本地 VPC 在刚开播/切集时 duration 可能为 0，此时 CastMedia.duration=null，
+    // DLNA 不会调用 updateDuration，TV 进度条会卡在 0/0 无法 seek。
+    // 方案A 下 _currentCacheKey 为 null 且未启动代理，跳过 session 兜底（duration 为 0）。
+    var localDuration = _videoPlayerController?.value.duration ?? Duration.zero;
+    if (localDuration.inMilliseconds <= 0 &&
+        _currentCacheKey != null &&
+        bufferMode == BufferMode.strategyB) {
+      final session = VideoCacheProxyServer.instance.getSession(_currentCacheKey!);
+      if (session != null) {
+        final ms = (session.m3u8Info.duration * 1000).round();
+        if (ms > 0) localDuration = Duration(milliseconds: ms);
+      }
+    }
+
+    // DLNA 投屏媒体类型决策（方案A）：
+    // dart_cast 的 DlnaSession 对 type==hls 硬编码走 registerHlsAsStream，
+    // 将 HLS 转成无时间线的连续 TS 流 —— 导致 TV 只播第一个分片、无总时长、
+    // seek 无效。改传 type==mp4 让 DlnaSession 走 else 分支（registerMedia
+    // 直链透传），TV 直接请求 app LAN 代理返回的 m3u8 并原生解析、seek、算时长。
+    // Chromecast/AirPlay 不受影响（它们本就走直链透传）。
+    final isDlna = device.protocol == CastProtocol.dlna;
+    final castType = isDlna ? CastMediaType.mp4 : _detectCastMediaType(castUrl);
+
     final media = CastMedia(
       url: castUrl,
-      type: _detectCastMediaType(castUrl),
+      type: castType,
+      httpHeaders: _castHttpHeaders(_currentCastUrl),
       title: _playerTitle,
       startPosition: currentPosition.inMilliseconds > 0 ? currentPosition : null,
+      duration: localDuration.inMilliseconds > 0 ? localDuration : null,
     );
 
     // 4. 连接设备并开始投屏
-    final castService = ref.read(castServiceProvider);
+    final castService = _castService;
+    // P4：保存进入 connectAndPlay 前的"用户主动断开"标志。如果在等待过程中
+    // 用户点击了断开（_stopCasting 会置 _userInitiatedDisconnect=true 并触发
+    // castService.disconnect()），即便 await 之后 castService.isCasting 偶然
+    // 返回 true（cast_service 内部状态竞争），也必须走"恢复本地播放"分支，
+    // 不能误报"投屏已启动"让 UI 卡在 cast overlay 中。plan 1786547299978 P4。
+    final wasUserInitiatedBefore = _userInitiatedDisconnect;
     await castService.connectAndPlay(device, media);
-    appLogger.i('[Player] 投屏已启动: url=$castUrl, startPosition=$currentPosition');
+    appLogger.i('[Player] connectAndPlay 完成: isCasting=${castService.isCasting}, '
+        'userInitiatedBefore=$wasUserInitiatedBefore, '
+        'userInitiatedAfter=$_userInitiatedDisconnect');
+
+    // 5. 检测连接/加载是否失败。
+    //    cast_service 在从未连接成功时不会广播 disconnected（静默清理），
+    //    因此 _listenCastState 不会被触发，需在此显式恢复本地播放。
+    //    失败判定：投屏状态非"投屏中"或本次已被用户主动断开。
+    final userDisconnectedMidway = wasUserInitiatedBefore || _userInitiatedDisconnect;
+    if (castService.isCasting && !userDisconnectedMidway) {
+      _castEverConnected = true;
+      appLogger.i(
+          '[Player] 投屏已启动 ${_deviceTag(device)}, startPosition=$currentPosition, duration=$localDuration');
+      // P3：投屏加载兜底超时。某些 AirPlay 设备接受 /play 后 TV 一直转圈
+      // （dart_cast 内部 fallback 链也无法唤醒，readyToPlay 始终 false）。
+      // 启动一个超时器，超时后若仍未进入 playing/paused/buffering，
+      // 自动断开并恢复本地播放，避免用户卡死。超时前若状态正常推进，
+      // 由 [_listenCastState] 或 [_stopCasting] 取消该计时器。
+      _startCastLoadingWatchdog(device);
+    } else {
+      // 连接/加载失败 / 用户中途断开：恢复本地播放并保留断点位置
+      // 详细异常类型（errorType=...）已由 cast_service 的 catch 块按 AirPlay
+      // socket/timeout/http/auth/未知分类记录，此处只记录 UI 层动作。
+      appLogger.w(
+          '[Player] 投屏未启动 ${_deviceTag(device)}, '
+          'reason=${userDisconnectedMidway ? "user_disconnected_midway" : "connect_or_load_failed"}, '
+          '恢复本地播放, 断点=$_lastLocalPosition');
+      _userInitiatedDisconnect = true; // 抑制 _listenCastState 的意外断线回退
+      if (_chewieController != null && _lastLocalPosition.inMilliseconds > 0) {
+        _chewieController!.videoPlayerController.setVolume(1.0);
+        _chewieController!.seekTo(_lastLocalPosition);
+        _chewieController!.play();
+        ref.read(danmakuControllerProvider).play();
+      } else {
+        _chewieController?.videoPlayerController.setVolume(1.0);
+        _chewieController?.play();
+        ref.read(danmakuControllerProvider).play();
+      }
+      // 仅在非用户主动断开时提示"投屏失败"；用户主动断开不应误报失败
+      // （plan 1786717587976 3.2）。
+      if (mounted && !userDisconnectedMidway) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('投屏失败：${device.name} 暂不可用，已恢复本地播放'),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  /// 投屏前预热分片缓存 — 标记当前位置附近分片为紧急下载任务，
+  /// 避免 dart_cast 拉取分片时调度器尚未启动或分片未缓存导致请求超时/失败。
+  void _prewarmCastCache(Duration currentPosition) {
+    final cacheKey = _currentCacheKey;
+    if (cacheKey == null) return;
+    final session = VideoCacheProxyServer.instance.getSession(cacheKey);
+    if (session == null) return;
+
+    final cacheManager = session.cacheManager;
+    final totalSegments = cacheManager.totalSegments;
+    if (totalSegments <= 0) return;
+
+    // 根据当前位置推算起始分片索引（按 m3u8 平均分片时长估算）
+    final m3u8DurationSec = session.m3u8Info.duration;
+    if (m3u8DurationSec <= 0) return;
+    final avgSegSec = m3u8DurationSec / totalSegments;
+    if (avgSegSec <= 0) return;
+    final startIdx = (currentPosition.inMilliseconds / 1000 / avgSegSec).floor()
+        .clamp(0, totalSegments - 1);
+    // 预热当前分片之后的 32 个分片，覆盖 dart_cast 即将顺序拉取的批次
+    final prewarmCount = 32;
+    final endIdx = (startIdx + prewarmCount).clamp(0, totalSegments);
+
+    // 确保 scheduler 在跑
+    if (session.state != SessionState.active) {
+      session.start();
+    }
+
+    for (var i = startIdx; i < endIdx; i++) {
+      session.notifyUrgentSegment(i);
+    }
+    appLogger.i('[Player] 投屏预热分片缓存: range=[$startIdx,$endIdx), total=$totalSegments');
+  }
+
+  /// 投屏加载兜底超时时长。某些 AirPlay 设备接受 /play 后 TV 一直转圈
+  /// （dart_cast 内部 fallback 链全部返回 false 200，readyToPlay 始终 false）。
+  /// 超过该时长仍未进入 playing/paused/buffering 即视为加载失败。
+  static const Duration _kCastLoadingTimeout = Duration(seconds: 15);
+
+  /// 启动投屏加载超时兜底。超时后若 cast_service 仍未进入正常播放状态，
+  /// 自动断开并恢复本地播放 + SnackBar 提示。
+  ///
+  /// 取消时机（按优先级）：
+  /// 1. 投屏状态推进到 playing/paused/buffering（[_listenCastState]）
+  /// 2. 投屏进入 disconnected（[_listenCastState]）
+  /// 3. 用户主动断开（[_stopCasting]）
+  /// 4. 组件销毁（[dispose]）
+  void _startCastLoadingWatchdog(CastDevice device) {
+    _castLoadingWatchdog?.cancel();
+    _castLoadingWatchdog = Timer(_kCastLoadingTimeout, () async {
+      _castLoadingWatchdog = null;
+      if (!mounted) return;
+      final castService = _castService;
+      final s = castService.state;
+      // 已退出 loading（进入 playing/paused/buffering）或已断开 -> 无需兜底
+      if (s == CastState.playing ||
+          s == CastState.paused ||
+          s == CastState.buffering ||
+          s == CastState.disconnected) {
+        return;
+      }
+      appLogger.w(
+          '[Player] 投屏加载超时（TV 一直转圈），自动断开 ${_deviceTag(device)}: state=$s');
+      // 标记为"非用户主动"断开：让 [_listenCastState] 的 disconnected
+      // 分支走"意外断线回退"路径，自动恢复本地播放（复用断点守护逻辑）。
+      // 但此时 castService.castPosition 仍为 0（从未真正播过），
+      // 因此在断开前先把 _lastLocalPosition 注入 castService。
+      _castEverConnected = false;
+      _userInitiatedDisconnect = false;
+      castService.injectCastPosition(_lastLocalPosition);
+      await castService.disconnect();
+    });
+  }
+
+  /// 取消投屏加载兜底超时器（在投屏正常推进或断开时调用）。
+  void _cancelCastLoadingWatchdog() {
+    _castLoadingWatchdog?.cancel();
+    _castLoadingWatchdog = null;
   }
 
   /// 投屏断开：断开远端连接，从远端最后位置恢复本地播放
   Future<void> _stopCasting() async {
+    // AirPlay 断开：调原生一键断开（iOS 把所有 AVPlayer 的 allowsExternalPlayback
+    // 置 false 立即踢回本机；macOS 把默认输出切回非 AirPlay）。
+    // KVO / CoreAudio 监听会自动推送路由状态，PlaybackController 随之清 overlay。
+    if (ref.read(playbackControllerProvider).state.isAirPlayActive) {
+      appLogger.i('[Player] AirPlay 断开（用户主动）');
+      final kicked = await ref.read(airPlayRouteServiceProvider).disconnect();
+      if (kicked) return;
+
+      // 兜底：600ms 后路由仍未回退（如音频-only AirPlay / HomePod 路由不回退），
+      // 自动弹出系统选路面板让用户手选。
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      final stillActive = await ref.read(airPlayRouteServiceProvider).checkActive();
+      if (stillActive) {
+        appLogger.w('[Player] AirPlay 一键断开未生效，弹出系统选路面板兜底');
+        await ref.read(airPlayRouteServiceProvider).showPicker();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('未能自动断开，请在系统面板选择回本机'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+      return;
+    }
+
     appLogger.i('[Player] 投屏断开（用户主动）');
+
+    // 取消加载兜底超时器，避免与用户主动断开的恢复逻辑竞态。
+    _cancelCastLoadingWatchdog();
 
     // 标记为用户主动断开，防止 _listenCastState 触发意外断线回退
     _userInitiatedDisconnect = true;
@@ -1736,10 +2200,12 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     if (castPosition.inMilliseconds > 0 && _chewieController != null) {
       appLogger.i('[Player] 从投屏断点恢复本地播放: position=$castPosition');
       _chewieController!.seekTo(castPosition);
+      _chewieController!.videoPlayerController.setVolume(1.0);
       _chewieController!.play();
       ref.read(danmakuControllerProvider).play();
     } else {
       // 无有效位置，直接恢复播放
+      _chewieController?.videoPlayerController.setVolume(1.0);
       _chewieController?.play();
       ref.read(danmakuControllerProvider).play();
     }
@@ -1759,6 +2225,28 @@ class _PlayerScreenState extends ConsumerState<PlayerScreen> {
     }
     // 默认 MP4（最广泛的投屏兼容性）
     return CastMediaType.mp4;
+  }
+
+  /// 构建投屏防盗链头，传给 [CastMedia.httpHeaders]。
+  ///
+  /// 方案A 投屏走远程原始 m3u8 URL，dart_cast 0.6.0 的 HlsStreamHandler /
+  /// MediaProxy 逐分片 GET 时仅注入 `media.httpHeaders`。若不传，dart_cast 用
+  /// 默认 Dart UA、无 Referer 请求分片，源站防盗链校验返回 403/404，失败分片
+  /// 被静默跳过 → 投屏设备收到空/残缺流 → 表现为 404。
+  ///
+  /// 这里与 `stream_worker.dart` / `video_cache_proxy.dart` 保持一致：
+  /// `Referer` = m3u8 URL（源站检查同源 Referer），`User-Agent` = 浏览器 UA。
+  /// UA 字符串与 stream_worker.dart:327 / video_cache_proxy.dart:597-598 完全一致。
+  ///
+  /// 方案B 走 LAN 代理时分片由 app 代理转发（已带防盗链头），dart_cast 的
+  /// httpHeaders 对 LAN 代理无意义，但传上无害，且保证方案A/方案B 代码路径统一。
+  Map<String, String> _castHttpHeaders(String m3u8Url) {
+    return {
+      'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+          '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Referer': m3u8Url,
+    };
   }
 
   /// 用户主动 seek 回调 — 通知位置守护系统这是用户操作而非异常跳回
@@ -1826,6 +2314,7 @@ class _PortraitFullscreenPage extends ConsumerWidget {
   final Future<void> Function(FullscreenMode)? onSwitchFullscreenMode;
   final void Function(Duration)? onUserSeek;
   final void Function(DisplayAspectRatio)? onAspectRatioChange;
+  final VoidCallback? onResetAspectRatio;
   final void Function(CastDevice device)? onCastDevice;
   final VoidCallback? onCastDisconnect;
   final VoidCallback? onPreviousEpisode;
@@ -1841,6 +2330,7 @@ class _PortraitFullscreenPage extends ConsumerWidget {
     this.onSwitchFullscreenMode,
     this.onUserSeek,
     this.onAspectRatioChange,
+    this.onResetAspectRatio,
     this.onCastDevice,
     this.onCastDisconnect,
     this.onPreviousEpisode,
@@ -1885,6 +2375,7 @@ class _PortraitFullscreenPage extends ConsumerWidget {
                   onSwitchFullscreenMode: onSwitchFullscreenMode,
                   onUserSeek: onUserSeek,
                   onAspectRatioChange: onAspectRatioChange,
+                  onResetAspectRatio: onResetAspectRatio,
                   onCastDevice: onCastDevice,
                   onCastDisconnect: onCastDisconnect,
                 ),
@@ -1893,6 +2384,44 @@ class _PortraitFullscreenPage extends ConsumerWidget {
         ),
       ),
     );
+  }
+}
+
+/// 统一设备标签，与 `cast_service.dart` 中 `_deviceTag` 保持相同格式。
+///
+/// `PlayerScreen` 也需要按统一格式输出设备上下文，便于日志 grep。
+/// 不放在 `cast_service.dart` 是为了避免把私有方法提到 public API。
+String _deviceTag(CastDevice d) =>
+    '[id=${d.id.isEmpty ? "<empty>" : d.id}, '
+    'name=${d.name}, '
+    'addr=${d.address.address}:${d.port}, '
+    'proto=${d.protocol.name}]';
+
+/// 根据画面比例模式计算 aspectRatio 值（用于构造 ChewieController 时的初始化路径）
+/// 直接读取 [VideoPlayerController]，不依赖 ChewieController 实例。
+/// 返回 null 表示不限制（自适应/填充）
+double? _computeAspectRatioForInit(DisplayAspectRatio ratio, VideoPlayerController vpc) {
+  switch (ratio) {
+    case DisplayAspectRatio.ratio16_9:
+      return 16 / 9;
+    case DisplayAspectRatio.ratio4_3:
+      return 4 / 3;
+    case DisplayAspectRatio.ratio9_16:
+      return 9 / 16;
+    case DisplayAspectRatio.reset:
+      // 防御性处理：reset 在 onSelected 中已映射为具体值，正常不会到达此处
+      return 16 / 9;
+    case DisplayAspectRatio.fill:
+      // 填充模式：让 chewie 回退到视频原始比例，由 _buildVideoWithAspectRatio 套 ClipRect
+      return null;
+    case DisplayAspectRatio.autoAdapt:
+      final videoSize = vpc.value.size;
+      if (videoSize.width > 0 && videoSize.height > 0) {
+        return videoSize.width / videoSize.height;
+      }
+      // 原始比例不可得（VPC 尚未初始化）时回退 16:9；
+      // isInitialized 后由 listener 重算为真实比例
+      return 16 / 9;
   }
 }
 
@@ -1917,7 +2446,8 @@ double? _computeAspectRatio(DisplayAspectRatio ratio, ChewieController controlle
       if (videoSize.width > 0 && videoSize.height > 0) {
         return videoSize.width / videoSize.height;
       }
-      return null;
+      // 原始比例不可得时回退 16:9
+      return 16 / 9;
   }
 }
 
@@ -1939,6 +2469,7 @@ class _LandscapeFullscreenPage extends ConsumerWidget {
   final Future<void> Function(FullscreenMode)? onSwitchFullscreenMode;
   final void Function(Duration)? onUserSeek;
   final void Function(DisplayAspectRatio)? onAspectRatioChange;
+  final VoidCallback? onResetAspectRatio;
   final void Function(CastDevice device)? onCastDevice;
   final VoidCallback? onCastDisconnect;
   final VoidCallback? onPreviousEpisode;
@@ -1954,6 +2485,7 @@ class _LandscapeFullscreenPage extends ConsumerWidget {
     this.onSwitchFullscreenMode,
     this.onUserSeek,
     this.onAspectRatioChange,
+    this.onResetAspectRatio,
     this.onCastDevice,
     this.onCastDisconnect,
     this.onPreviousEpisode,
@@ -1998,6 +2530,7 @@ class _LandscapeFullscreenPage extends ConsumerWidget {
                   onSwitchFullscreenMode: onSwitchFullscreenMode,
                   onUserSeek: onUserSeek,
                   onAspectRatioChange: onAspectRatioChange,
+                  onResetAspectRatio: onResetAspectRatio,
                   onCastDevice: onCastDevice,
                   onCastDisconnect: onCastDisconnect,
                 ),

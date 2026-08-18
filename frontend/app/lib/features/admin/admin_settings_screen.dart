@@ -9,6 +9,7 @@ import 'tabs/user_tab.dart';
 import 'tabs/download_config_tab.dart';
 import 'tabs/douban_config_tab.dart';
 import 'tabs/stream_config_tab.dart';
+import 'tabs/home_config_tab.dart';
 
 class AdminSettingsScreen extends ConsumerStatefulWidget {
   const AdminSettingsScreen({super.key});
@@ -29,6 +30,7 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen>
     Tab(icon: Icon(Icons.download_outlined), text: '下载'),
     Tab(icon: Icon(Icons.movie_outlined), text: '豆瓣'),
     Tab(icon: Icon(Icons.stream_outlined), text: '流代理'),
+    Tab(icon: Icon(Icons.home_outlined), text: '首页'),
   ];
 
   @override
@@ -59,6 +61,9 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen>
         bottom: TabBar(
           controller: _tabController,
           tabs: _tabs,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          padding: EdgeInsets.zero,
           labelColor: colors.primary,
           unselectedLabelColor: colors.textSecondary,
           indicatorColor: colors.primary,
@@ -74,6 +79,7 @@ class _AdminSettingsScreenState extends ConsumerState<AdminSettingsScreen>
           DownloadConfigTab(),
           DoubanConfigTab(),
           StreamConfigTab(),
+          HomeConfigTab(),
         ],
       ),
     );

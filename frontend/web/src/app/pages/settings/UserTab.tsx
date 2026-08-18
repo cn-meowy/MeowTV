@@ -57,12 +57,25 @@ function UserListSubTab({ theme }: { theme: SettingsTheme }) {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  // 用户组下拉数据源
+  const [groups, setGroups] = useState<UserGroupItem[]>([]);
+
   const [showCreate, setShowCreate] = useState(false);
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [newNickname, setNewNickname] = useState("");
   const [newRole, setNewRole] = useState(0);
+  const [newGroupId, setNewGroupId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+
+  // 编辑用户
+  const [editingUser, setEditingUser] = useState<UserListItem | null>(null);
+  const [editNickname, setEditNickname] = useState("");
+  const [editRole, setEditRole] = useState(0);
+  const [editStatus, setEditStatus] = useState(1);
+  const [editGroupId, setEditGroupId] = useState<number | null>(null);
+  const [originalGroupId, setOriginalGroupId] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const pageSize = 10;
 
@@ -79,6 +92,18 @@ function UserListSubTab({ theme }: { theme: SettingsTheme }) {
     }
   };
 
+  // 一次性加载用户组列表（size 取较大值）
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await userGroupApi.getUserGroupList({ page: 1, size: 100 });
+        setGroups(data.items || []);
+      } catch {
+        // 静默
+      }
+    })();
+  }, []);
+
   useEffect(() => { fetchUsers(); }, [page]);
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -86,15 +111,66 @@ function UserListSubTab({ theme }: { theme: SettingsTheme }) {
     setCreating(true);
     setMessage(null);
     try {
-      await adminApi.createUser({ username: newUsername, password: newPassword, nickname: newNickname || undefined, role: newRole });
+      const resp = await adminApi.createUser({ username: newUsername, password: newPassword, nickname: newNickname || undefined, role: newRole });
+      if (newGroupId != null) {
+        try {
+          await userGroupApi.setUserGroup({ user_id: resp.id, group_id: newGroupId });
+        } catch (err) {
+          setMessage({ type: "error", text: `用户已创建，但用户组设置失败：${err instanceof ApiError ? err.message : "未知错误"}` });
+          setNewUsername(""); setNewPassword(""); setNewNickname(""); setNewRole(0); setNewGroupId(null);
+          setShowCreate(false);
+          await fetchUsers();
+          return;
+        }
+      }
       setMessage({ type: "success", text: "用户创建成功" });
-      setNewUsername(""); setNewPassword(""); setNewNickname(""); setNewRole(0);
+      setNewUsername(""); setNewPassword(""); setNewNickname(""); setNewRole(0); setNewGroupId(null);
       setShowCreate(false);
       await fetchUsers();
     } catch (err) {
       setMessage({ type: "error", text: err instanceof ApiError ? err.message : "创建失败" });
     } finally {
       setCreating(false);
+    }
+  };
+
+  const handleEdit = (u: UserListItem) => {
+    setEditingUser(u);
+    setEditNickname(u.nickname || "");
+    setEditRole(u.role);
+    setEditStatus(u.status);
+    const gid = u.group_id ?? null;
+    setEditGroupId(gid);
+    setOriginalGroupId(gid);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingUser(null);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingUser) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await adminApi.updateUser({ id: editingUser.id, nickname: editNickname, role: editRole, status: editStatus });
+      if (editGroupId !== originalGroupId) {
+        try {
+          await userGroupApi.setUserGroup({ user_id: editingUser.id, group_id: editGroupId });
+        } catch (err) {
+          setMessage({ type: "error", text: `用户信息已更新，但用户组设置失败：${err instanceof ApiError ? err.message : "未知错误"}` });
+          setEditingUser(null);
+          await fetchUsers();
+          return;
+        }
+      }
+      setMessage({ type: "success", text: "用户已更新" });
+      setEditingUser(null);
+      await fetchUsers();
+    } catch (err) {
+      setMessage({ type: "error", text: err instanceof ApiError ? err.message : "更新失败" });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -118,6 +194,14 @@ function UserListSubTab({ theme }: { theme: SettingsTheme }) {
   };
 
   const totalPages = Math.ceil(total / pageSize);
+
+  // 用户组下拉选项（创建/编辑共用）
+  const groupOptions = (
+    <>
+      <option value="">未分组</option>
+      {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+    </>
+  );
 
   return (
     <div>
@@ -158,6 +242,12 @@ function UserListSubTab({ theme }: { theme: SettingsTheme }) {
                 <option value={1}>管理员</option>
               </select>
             </div>
+            <div className="flex flex-col gap-1.5">
+              <label style={labelStyle}>用户组</label>
+              <select value={newGroupId ?? ""} onChange={e => setNewGroupId(e.target.value === "" ? null : Number(e.target.value))} className="px-4 py-2.5 rounded-xl text-sm outline-none" style={inputStyle}>
+                {groupOptions}
+              </select>
+            </div>
             <div className="col-span-2 flex justify-end gap-3">
               <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 rounded-xl text-sm" style={ghostBtnStyle}>取消</button>
               <button type="submit" disabled={creating} className="px-5 py-2 rounded-xl text-sm hover:scale-105 transition-all duration-200" style={primaryBtnStyle(theme, creating)}>
@@ -168,24 +258,66 @@ function UserListSubTab({ theme }: { theme: SettingsTheme }) {
         </div>
       )}
 
+      {editingUser && (
+        <div className="rounded-2xl p-6 mb-6" style={{ ...cardStyle, border: `1px solid ${theme.glow}` }}>
+          <h2 className="mb-4" style={sectionTitleStyle}>编辑用户 — #{editingUser.id} {editingUser.username}</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label style={labelStyle}>昵称</label>
+              <input value={editNickname} onChange={e => setEditNickname(e.target.value)} className="px-4 py-2.5 rounded-xl text-sm outline-none" style={inputStyle} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label style={labelStyle}>角色</label>
+              <select value={editRole} onChange={e => setEditRole(Number(e.target.value))} className="px-4 py-2.5 rounded-xl text-sm outline-none" style={inputStyle}>
+                <option value={0}>普通用户</option>
+                <option value={1}>管理员</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label style={labelStyle}>状态</label>
+              <select value={editStatus} onChange={e => setEditStatus(Number(e.target.value))} className="px-4 py-2.5 rounded-xl text-sm outline-none" style={inputStyle}>
+                <option value={1}>正常</option>
+                <option value={0}>禁用</option>
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label style={labelStyle}>用户组</label>
+              <select value={editGroupId ?? ""} onChange={e => setEditGroupId(e.target.value === "" ? null : Number(e.target.value))} className="px-4 py-2.5 rounded-xl text-sm outline-none" style={inputStyle}>
+                {groupOptions}
+              </select>
+            </div>
+            <div className="col-span-2 flex justify-end gap-3">
+              <button type="button" onClick={handleCancelEdit} className="px-4 py-2 rounded-xl text-sm" style={ghostBtnStyle}>取消</button>
+              <button type="button" onClick={handleSaveEdit} disabled={saving} className="px-5 py-2 rounded-xl text-sm hover:scale-105 transition-all duration-200" style={primaryBtnStyle(theme, saving)}>
+                {saving ? "保存中…" : "保存"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-2xl overflow-hidden" style={cardStyle}>
-        <div className="grid grid-cols-5 gap-4 px-6 py-3 text-xs" style={{ color: "var(--text-secondary)", fontFamily: "var(--font-display)", fontWeight: 600, letterSpacing: "0.06em", borderBottom: "1px solid var(--border-default)" }}>
-          <span>UID</span><span>用户名</span><span>昵称</span><span>角色</span><span className="text-right">操作</span>
+        <div className="grid grid-cols-6 gap-4 px-6 py-3 text-xs" style={{ color: "var(--text-secondary)", fontFamily: "var(--font-display)", fontWeight: 600, letterSpacing: "0.06em", borderBottom: "1px solid var(--border-default)" }}>
+          <span>UID</span><span>用户名</span><span>昵称</span><span>用户组</span><span>角色</span><span className="text-right">操作</span>
         </div>
         {loading ? (
           <div className="px-6 py-8 text-center text-sm" style={{ color: "var(--text-secondary)" }}>加载中…</div>
         ) : users.length === 0 ? (
           <div className="px-6 py-8 text-center text-sm" style={{ color: "var(--text-secondary)" }}>暂无用户</div>
         ) : users.map(u => (
-          <div key={u.id} className="grid grid-cols-5 gap-4 px-6 py-4 items-center text-sm" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
+          <div key={u.id} className="grid grid-cols-6 gap-4 px-6 py-4 items-center text-sm" style={{ borderBottom: "1px solid var(--border-subtle)" }}>
             <span style={{ color: theme.from, fontFamily: "var(--font-display)", fontWeight: 600 }}>#{u.id}</span>
             <span style={{ color: "var(--text-primary)" }}>{u.username}</span>
             <span style={{ color: "var(--text-secondary)" }}>{u.nickname || "—"}</span>
+            <span style={{ color: "var(--text-secondary)" }}>{u.group_name || "—"}</span>
             <span className="flex items-center gap-1">
               <Shield size={12} style={{ color: u.role === 1 ? theme.from : "var(--text-secondary)" }} />
               <span style={{ color: u.role === 1 ? theme.from : "var(--text-secondary)" }}>{u.role === 1 ? "管理员" : "用户"}</span>
             </span>
             <div className="flex items-center justify-end gap-2">
+              <button onClick={() => handleEdit(u)} className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg" style={{ color: theme.from, background: "var(--bg-elevated)" }} title="编辑用户">
+                <Edit2 size={11} /> 编辑
+              </button>
               <button onClick={() => handleResetPassword(u.id)} className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg" style={{ color: "var(--text-secondary)", background: "var(--bg-elevated)" }} title="重置密码为 123456">
                 <KeyRound size={11} /> 重置
               </button>

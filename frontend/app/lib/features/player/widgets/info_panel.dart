@@ -3,6 +3,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../../shared/widgets/cache_icons.dart';
 
 import '../../../core/theme/app_theme.dart' show AppColors, BuildContextThemeX;
+import '../../../shared/models/enums.dart';
 import '../../../shared/models/resource_detail.dart';
 import '../../../shared/widgets/favorite_star_button.dart';
 import '../../settings/douban_image_proxy_provider.dart';
@@ -26,6 +27,56 @@ class _InfoPanelState extends State<InfoPanel> {
   bool _descExpanded = false;
   bool _imgError = false;
 
+  // 封面 URL / headers 缓存，避免随父组件高频重建反复调用 resolveImageUrl（该方法含日志与字符串拼接）。
+  String _coverUrl = '';
+  Map<String, String>? _coverHeaders;
+  // 上次解析封面所用的输入指纹，用于 didUpdateWidget 判断是否需要重新解析。
+  // DoubanImageProxyState 未重写 ==/hashCode，故手动比较其关键字段。
+  String? _lastVodPic;
+  String? _lastBaseUrl;
+  DoubanImageProxyMode? _lastProxyMode;
+  String? _lastTempToken;
+  DateTime? _lastTokenExpiresAt;
+
+  /// 解析封面 URL 与 HTTP headers 并缓存到字段。
+  /// 仅在 vodPic / baseUrl / proxyState 关键字段变化时重新调用。
+  void _resolveCover() {
+    final vodPic = widget.detail.vodPic ?? '';
+    _coverUrl = widget.proxyState.resolveImageUrl(vodPic, widget.baseUrl) ?? '';
+    _coverHeaders = widget.proxyState.httpHeadersForUrl(vodPic);
+    _lastVodPic = vodPic;
+    _lastBaseUrl = widget.baseUrl;
+    _lastProxyMode = widget.proxyState.mode;
+    _lastTempToken = widget.proxyState.tempToken;
+    _lastTokenExpiresAt = widget.proxyState.tokenExpiresAt;
+  }
+
+  /// 封面相关输入是否发生变化（需重新解析）。
+  bool _coverInputsChanged() {
+    final vodPic = widget.detail.vodPic ?? '';
+    return vodPic != _lastVodPic ||
+        widget.baseUrl != _lastBaseUrl ||
+        widget.proxyState.mode != _lastProxyMode ||
+        widget.proxyState.tempToken != _lastTempToken ||
+        widget.proxyState.tokenExpiresAt != _lastTokenExpiresAt;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveCover();
+  }
+
+  @override
+  void didUpdateWidget(covariant InfoPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_coverInputsChanged()) {
+      _resolveCover();
+      // 封面 URL 变化时重置图片加载错误状态，避免新 URL 仍显示占位图
+      _imgError = false;
+    }
+  }
+
   String _stripHtml(String html) => html.replaceAll(RegExp(r'<[^>]*>'), '').trim();
 
   Widget _coverPlaceholder(AppColors colors) => Container(
@@ -46,8 +97,9 @@ class _InfoPanelState extends State<InfoPanel> {
     final blurb = d.vodBlurb ?? (d.vodContent != null ? _stripHtml(d.vodContent!) : '');
     final isLongDesc = blurb.length > 120;
     final displayDesc = _descExpanded ? blurb : (isLongDesc ? '${blurb.substring(0, 120)}…' : blurb);
-    final coverUrl = widget.proxyState.buildImageUrl(d.vodPic ?? '', widget.baseUrl);
-    final coverHeaders = widget.proxyState.httpHeadersForUrl(d.vodPic ?? '');
+    // 使用 initState/didUpdateWidget 中缓存的封面 URL/headers，避免每次 build 重复解析与打日志
+    final coverUrl = _coverUrl;
+    final coverHeaders = _coverHeaders;
     final doubanScore = d.vodDoubanScore;
     final vodScore = d.vodScore;
     final hasScore = (doubanScore != null && doubanScore.isNotEmpty) || (vodScore != null && vodScore.isNotEmpty);
@@ -65,7 +117,7 @@ class _InfoPanelState extends State<InfoPanel> {
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             // 标题 + 下载 + 收藏
             Row(children: [
-              Expanded(child: Text(d.vodName, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: colors.textPrimary, fontSize: 16, fontWeight: FontWeight.w800))),
+              Expanded(child: Text(d.vodName, style: TextStyle(color: colors.textPrimary, fontSize: 16, fontWeight: FontWeight.w800))),
               if (widget.onDownload != null)
                 GestureDetector(
                   onTap: widget.onDownload,

@@ -15,6 +15,8 @@ export const API = {
   USER_PASSWORD: '/api/user/password',
   USER_DEVICES: '/api/user/devices',
   USER_KICK_DEVICE: '/api/user/kick-device',
+  // 普通用户只读系统配置（复用 AdminConfig.List handler）
+  USER_CONFIG_LIST: '/api/user/config/list',
 
   // Admin
   ADMIN_USER_CREATE: '/api/admin/user/create',

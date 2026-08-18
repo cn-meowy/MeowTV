@@ -67,6 +67,8 @@ class SecureStorageService {
   static const _refreshTokenKey = 'refresh_token';
   static const _isLoggedInKey = 'is_logged_in';
   static const _hasSeenDisclaimer = 'has_seen_disclaimer';
+  static const _agreementsAcceptedKey = 'agreements_accepted';
+  static const _agreementsVersionKey = 'agreements_version';
   static const _themeModeKey = 'theme_mode';
   static const _doubanImageProxyModeKey = 'douban_image_proxy_mode';
   static const _bufferModeKey = 'buffer_mode';
@@ -301,7 +303,7 @@ class SecureStorageService {
   Future<void> setLoggedIn(bool value) =>
       write(key: _isLoggedInKey, value: value.toString());
 
-  // ---- Disclaimer ----
+  // ---- Disclaimer (legacy, kept for migration) ----
   Future<bool> hasSeenDisclaimer() async {
     final val = await read(key: _hasSeenDisclaimer);
     return val == 'true';
@@ -309,6 +311,39 @@ class SecureStorageService {
 
   Future<void> setHasSeenDisclaimer(bool value) =>
       write(key: _hasSeenDisclaimer, value: value.toString());
+
+  // ---- Agreements (用户协议 & 隐私政策) ----
+  static const int currentAgreementsVersion = 1;
+
+  Future<bool> hasAcceptedAgreements() async {
+    final val = await read(key: _agreementsAcceptedKey);
+    return val == 'true';
+  }
+
+  Future<int> getAcceptedAgreementsVersion() async {
+    final val = await read(key: _agreementsVersionKey);
+    return int.tryParse(val ?? '') ?? 0;
+  }
+
+  /// Returns true if user must (re-)accept the agreements:
+  /// not yet accepted OR accepted an older version.
+  /// Also migrates legacy disclaimer acceptance (v0) — old users are
+  /// treated as having accepted version 0, so they re-confirm on upgrade.
+  Future<bool> needsAgreementsConfirmation() async {
+    final accepted = await hasAcceptedAgreements();
+    if (!accepted) {
+      // Legacy migration: if old disclaimer was seen but new flag not set,
+      // treat as version 0 (will re-confirm due to version mismatch).
+      return true;
+    }
+    final version = await getAcceptedAgreementsVersion();
+    return version < currentAgreementsVersion;
+  }
+
+  Future<void> setAgreementsAccepted() async {
+    await write(key: _agreementsAcceptedKey, value: 'true');
+    await write(key: _agreementsVersionKey, value: currentAgreementsVersion.toString());
+  }
 
   // ---- Theme Mode ----
   Future<String?> getThemeMode() => read(key: _themeModeKey);
@@ -405,4 +440,26 @@ class SecureStorageService {
     await delete(key: _rememberedCredentialsKey);
     await delete(key: _rememberMeFlagKey);
   }
+
+  // ------------------------------------------------------------------
+  // AirPlay HAP credentials (per-device pairing secrets)
+  // ------------------------------------------------------------------
+  // dart_cast 的 HapCredentials.serialize() 产出「管道分隔 hex 字符串」，
+  // 按设备 ID 存取，已配对设备二次投屏时走 pair-verify，无需再次弹 PIN。
+
+  static const _airplayCredsPrefix = 'airplay_hap_creds_';
+
+  /// 读取指定设备的 AirPlay HAP 凭证序列化字符串。
+  /// 返回 null 表示该设备尚未配对。
+  Future<String?> getAirPlayCredentials(String deviceId) =>
+      read(key: '$_airplayCredsPrefix$deviceId');
+
+  /// 保存指定设备的 AirPlay HAP 凭证（[serialized] 为
+  /// `HapCredentials.serialize()` 的输出）。
+  Future<void> setAirPlayCredentials(String deviceId, String serialized) =>
+      write(key: '$_airplayCredsPrefix$deviceId', value: serialized);
+
+  /// 删除指定设备的 AirPlay HAP 凭证（凭证失效 / 用户取消配对时调用）。
+  Future<void> removeAirPlayCredentials(String deviceId) =>
+      delete(key: '$_airplayCredsPrefix$deviceId');
 }

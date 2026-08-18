@@ -111,7 +111,7 @@ class StartScreen extends StatelessWidget {
                       width: double.infinity,
                       height: 56,
                       child: ElevatedButton(
-                        onPressed: () => context.go('/disclaimer'),
+                        onPressed: () => context.go('/agreements'),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: colors.primary,
                           shape: RoundedRectangleBorder(

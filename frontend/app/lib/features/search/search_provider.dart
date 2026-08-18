@@ -124,7 +124,11 @@ class SearchNotifier extends StateNotifier<SearchState> {
           .map((s) => s.domain)
           .toList();
       state = state.copyWith(sites: items, selectedResources: defaultSelected);
-    } catch (_) {}
+    } catch (e) {
+      appLogger.e('[SearchNotifier] loadSites FAILED', error: e);
+      if (!mounted) return;
+      state = state.copyWith(error: '资源站点加载失败');
+    }
   }
 
   /// Load search history from backend.
@@ -170,6 +174,24 @@ class SearchNotifier extends StateNotifier<SearchState> {
       groupedResults: {},
     );
 
+    // Guard: ensure resource sites are loaded before searching. The server
+    // requires `resources` (min=1); without it the request is rejected with
+    // 400 and the error was previously rendered nowhere. If sites still
+    // fail to load, surface the error and abort the search.
+    if (state.selectedResources.isEmpty) {
+      appLogger.w('[SearchNotifier] search: selectedResources empty, retrying loadSites');
+      await loadSites();
+      if (!mounted) return;
+      if (state.selectedResources.isEmpty) {
+        appLogger.w('[SearchNotifier] search: sites still unavailable, aborting');
+        state = state.copyWith(
+          isSearching: false,
+          error: state.error ?? '资源站点未就绪，请稍后重试',
+        );
+        return;
+      }
+    }
+
     // Save search history (backend + local state)
     try {
       await _api.post(ApiConstants.searchHistoryAdd, data: {'keyword': query});
@@ -183,9 +205,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
     await _sse.searchSSE(
       query: query,
       doubanId: doubanId,
-      resources: state.selectedResources.isNotEmpty
-          ? state.selectedResources
-          : null,
+      resources: state.selectedResources,
       callbacks: SearchCallbacks(
         onResult: (item) {
           if (!mounted) return;
@@ -234,12 +254,19 @@ class SearchNotifier extends StateNotifier<SearchState> {
         },
         onError: (data) {
           if (!mounted) return;
-          state = state.copyWith(
-            siteDoneMap: {
-              ...state.siteDoneMap,
-              data.resourceDomain: 'error: ${data.message}',
-            },
-          );
+          // Search-level errors (resourceDomain == '') are surfaced via
+          // state.error so the search page can render them; per-site errors
+          // remain in siteDoneMap.
+          if (data.resourceDomain.isEmpty) {
+            state = state.copyWith(error: data.message);
+          } else {
+            state = state.copyWith(
+              siteDoneMap: {
+                ...state.siteDoneMap,
+                data.resourceDomain: 'error: ${data.message}',
+              },
+            );
+          }
         },
       ),
       cancelToken: _cancelToken,

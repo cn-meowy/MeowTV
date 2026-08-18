@@ -51,6 +51,9 @@ class BilibiliControls extends ConsumerStatefulWidget {
   /// 画面比例变更回调
   final void Function(DisplayAspectRatio ratio)? onAspectRatioChange;
 
+  /// 还原画面比例回调 — 由 PlayerScreen 处理「还原到当前视频初始状态」
+  final VoidCallback? onResetAspectRatio;
+
   /// 用户选择投屏设备回调 — 由 PlayerScreen 处理投屏启动逻辑
   final void Function(CastDevice device)? onCastDevice;
 
@@ -69,6 +72,7 @@ class BilibiliControls extends ConsumerStatefulWidget {
     this.onSwitchFullscreenMode,
     this.onUserSeek,
     this.onAspectRatioChange,
+    this.onResetAspectRatio,
     this.onCastDevice,
     this.onCastDisconnect,
   });
@@ -896,14 +900,13 @@ class _BilibiliControlsState extends ConsumerState<BilibiliControls> {
                   : DisplayAspectRatio.landscapeOptions,
               onSelected: (ratio) {
                 if (!mounted) return;
-                // reset 是语法糖：映射到当前模式的默认比例
-                final effectiveRatio = ratio == DisplayAspectRatio.reset
-                    ? (BilibiliControls.currentFullscreenMode == FullscreenMode.portrait
-                        ? DisplayAspectRatio.ratio9_16
-                        : DisplayAspectRatio.ratio16_9)
-                    : ratio;
-                ref.read(displayAspectRatioProvider.notifier).setRatio(effectiveRatio);
-                widget.onAspectRatioChange?.call(effectiveRatio);
+                if (ratio == DisplayAspectRatio.reset) {
+                  // 「还原」= 回到当前视频初始比例（自适应），由 PlayerScreen 处理
+                  widget.onResetAspectRatio?.call();
+                } else {
+                  ref.read(displayAspectRatioProvider.notifier).setRatio(ratio);
+                  widget.onAspectRatioChange?.call(ratio);
+                }
                 setState(() => _showAspectRatioPanel = false);
                 _startHideTimer();
               },

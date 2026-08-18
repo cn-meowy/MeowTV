@@ -8,6 +8,7 @@ import { THEMES } from "@/app/components/Navbar";
 import { useThemeStore } from "@/stores/theme";
 import { useAuthStore } from "@/stores/auth";
 import { getSubjects, getTags } from "@/api/douban";
+import { getUserConfigList } from "@/api/config";
 import { getTempToken } from "@/api/tempToken";
 import { subjectToMovieCard, subjectToHeroItem } from "@/utils/douban";
 import type { MovieCardData, HeroItemData } from "@/utils/douban";
@@ -179,6 +180,10 @@ export default function HomePage() {
   const [activeTag, setActiveTag] = useState("热门");
   const initialLoadDone = useRef(false);
 
+  // 首页区块标题（来自后端 home_section_titles 配置，默认"最近添加"/"可能喜欢"）
+  const [sectionTitle1, setSectionTitle1] = useState("最近添加");
+  const [sectionTitle2, setSectionTitle2] = useState("可能喜欢");
+
   // loading 状态
   const [heroLoading, setHeroLoading] = useState(true);
   const [movieLoading, setMovieLoading] = useState(true);
@@ -259,6 +264,26 @@ export default function HomePage() {
     ]);
   }, [isAuthenticated, fetchSection]);
 
+  // 拉取首页区块标题配置（失败保留默认值）
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await getUserConfigList({ group: "home" });
+        if (cancelled) return;
+        const cfg = list.find((item) => item.config_key === "home_section_titles");
+        if (cfg) {
+          if (cfg.value1?.trim()) setSectionTitle1(cfg.value1.trim());
+          if (cfg.value2?.trim()) setSectionTitle2(cfg.value2.trim());
+        }
+      } catch {
+        // 失败保留默认值
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isAuthenticated]);
+
   useEffect(() => {
     fetchAllSections();
   }, [fetchAllSections]);
@@ -315,7 +340,7 @@ export default function HomePage() {
         </div>
         {/* 热门推荐 */}
         <section>
-          <SectionHeader icon={TrendingUp} title="热门推荐" themeFrom={theme.from} themeTo={theme.to} themeGlow={theme.glow} />
+          <SectionHeader icon={TrendingUp} title={sectionTitle1} themeFrom={theme.from} themeTo={theme.to} themeGlow={theme.glow} />
           {movieLoading ? (
             <CardGridSkeleton count={6} />
           ) : movieError ? (
@@ -331,7 +356,7 @@ export default function HomePage() {
 
         {/* 热播剧集 */}
         <section>
-          <SectionHeader icon={Flame} title="热播剧集" themeFrom={theme.from} themeTo={theme.to} themeGlow={theme.glow} />
+          <SectionHeader icon={Flame} title={sectionTitle2} themeFrom={theme.from} themeTo={theme.to} themeGlow={theme.glow} />
           {tvLoading ? (
             <CardGridSkeleton count={6} />
           ) : tvError ? (

@@ -10,7 +10,6 @@ import '../../core/theme/app_theme.dart';
 import '../../core/network/api_client.dart';
 import '../../shared/models/douban.dart';
 import 'home_provider.dart';
-import 'douban_provider.dart';
 import '../settings/douban_image_proxy_provider.dart';
 import '../../shared/widgets/section_header.dart';
 import '../../shared/widgets/video_card.dart';
@@ -63,10 +62,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final homeState = ref.watch(homeProvider);
-    final doubanState = ref.watch(doubanProvider);
     final proxyState = ref.watch(doubanImageProxyProvider);
     ref.read(doubanImageProxyProvider.notifier).checkAndRefresh();
     final colors = context.colors;
+    // 底部留白 = 导航栏高度 + 系统安全区；macOS 体感保底 80
+    final bottomInset = AppTheme.tabBarHeight + MediaQuery.of(context).padding.bottom;
+    final scrollBottomPadding = bottomInset.clamp(80.0, double.infinity);
 
     return Scaffold(
       body: SafeArea(
@@ -92,7 +93,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            '豆瓣数据无法加载，请下拉刷新重试',
+                            '数据无法加载，请下拉刷新重试',
                             style: TextStyle(color: colors.error, fontSize: 13),
                           ),
                         ),
@@ -139,7 +140,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       itemBuilder: (context, i) {
                         final subject = homeState.bannerSubjects[i];
                         final baseUrl = ref.read(apiClientProvider).baseUrl;
-                        final imageUrl = proxyState.buildImageUrl(subject.originalCover, baseUrl);
+                        final imageUrl = proxyState.resolveImageUrl(subject.originalCover, baseUrl) ?? '';
                         final headers = proxyState.httpHeadersForUrl(subject.originalCover);
                         return _BannerCard(
                           subject: subject,
@@ -204,57 +205,62 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             // TODO: implement when play-history API is ready
 
             // ─── Genre Pills ─────────────────────────────────────────────
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: AppTheme.md, vertical: AppTheme.sm),
-                child: SizedBox(
-                  height: 40,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: doubanState.movieTags.isNotEmpty ? doubanState.movieTags.length : 8,
-                    separatorBuilder: (_, _) => const SizedBox(width: AppTheme.sm),
-                    itemBuilder: (context, i) {
-                      final tag = doubanState.movieTags.isNotEmpty ? doubanState.movieTags[i] : _defaultTags[i];
-                      final isActive = tag == homeState.currentTag;
-                      return GestureDetector(
-                        onTap: () => ref.read(homeProvider.notifier).loadData(tag: tag),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: AppTheme.md, vertical: AppTheme.sm),
-                          decoration: BoxDecoration(
-                            color: isActive ? colors.primary : colors.card,
-                            borderRadius: BorderRadius.circular(AppTheme.radiusTag),
-                            border: Border.all(color: isActive ? colors.primary : colors.border),
-                          ),
-                          child: Text(
-                            tag,
-                            style: TextStyle(
-                              color: isActive ? colors.textInverse : colors.textSecondary,
-                              fontSize: 13,
-                              fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+            // 标签列表来自后端 /api/douban/tags（loadData 时填充到 homeState.tags）。
+            // 未返回时整体隐藏，不再使用硬编码 fallback。
+            if (homeState.tags.isNotEmpty)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: AppTheme.md, vertical: AppTheme.sm),
+                  child: SizedBox(
+                    height: 40,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: homeState.tags.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: AppTheme.sm),
+                      itemBuilder: (context, i) {
+                        final tag = homeState.tags[i];
+                        final isActive = tag == homeState.currentTag;
+                        return GestureDetector(
+                          onTap: () => ref.read(homeProvider.notifier).loadData(tag: tag),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: AppTheme.md, vertical: AppTheme.sm),
+                            decoration: BoxDecoration(
+                              color: isActive ? colors.primary : colors.card,
+                              borderRadius: BorderRadius.circular(AppTheme.radiusTag),
+                              border: Border.all(color: isActive ? colors.primary : colors.border),
+                            ),
+                            child: Text(
+                              tag,
+                              style: TextStyle(
+                                color: isActive ? colors.textInverse : colors.textSecondary,
+                                fontSize: 13,
+                                fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                              ),
                             ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
                 ),
               ),
-            ),
 
             // ─── Hot Movies ───────────────────────────────────────────────
+            // 区块标题来自后端 home_section_titles 配置（默认"最近添加"）
             if (homeState.hotMovies.isNotEmpty)
               SliverToBoxAdapter(
                 child: _ContentSection(
-                  title: '热门推荐',
+                  title: homeState.sectionTitle1,
                   items: homeState.hotMovies,
                 ),
               ),
 
             // ─── Hot TV Series ────────────────────────────────────────────
+            // 区块标题来自后端 home_section_titles 配置（默认"可能喜欢"）
             if (homeState.hotTvSeries.isNotEmpty)
               SliverToBoxAdapter(
                 child: _ContentSection(
-                  title: '热播剧集',
+                  title: homeState.sectionTitle2,
                   items: homeState.hotTvSeries,
                 ),
               ),
@@ -282,15 +288,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             // ),
 
             // Bottom padding for TabBar
-            const SliverToBoxAdapter(child: SizedBox(height: 80)),
+            SliverPadding(
+              padding: EdgeInsets.only(bottom: scrollBottomPadding),
+              sliver: const SliverToBoxAdapter(child: SizedBox.shrink()),
+            ),
           ],
         ),
       ),
     ),
     );
   }
-
-  static const _defaultTags = ['热门', '最新', '经典', '豆瓣高分', '冷门佳片', '华语', '欧美', '日本'];
 }
 
 class _BannerCard extends ConsumerStatefulWidget {
@@ -436,7 +443,7 @@ class _ContentSection extends ConsumerWidget {
               separatorBuilder: (_, _) => const SizedBox(width: 12),
               itemBuilder: (context, i) {
                 final baseUrl = ref.read(apiClientProvider).baseUrl;
-                final imgProxyUrl = proxyState.buildImageUrl(items[i].cover, baseUrl);
+                final imgProxyUrl = proxyState.resolveImageUrl(items[i].cover, baseUrl) ?? '';
                 final headers = proxyState.httpHeadersForUrl(items[i].cover);
                 return VideoCard(
                   title: items[i].title,

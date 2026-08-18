@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../logger/app_logger.dart';
 import 'm3u8_parser.dart';
@@ -55,6 +56,26 @@ class StreamSession {
     required this.segmentDir,
   })  : _createdAt = DateTime.now(),
         _lastAccess = DateTime.now();
+
+  /// 构造测试用 StreamSession（不发起网络请求、不要求磁盘目录存在）。
+  ///
+  /// 仅供单元测试使用（[pause] 行为验证），生产代码应通过 [create] 创建。
+  @visibleForTesting
+  static StreamSession createForTest({
+    required String sessionKey,
+    required String m3u8URL,
+    required M3u8Info m3u8Info,
+    required SegmentCacheManager cacheManager,
+    required String segmentDir,
+  }) {
+    return StreamSession._(
+      sessionKey: sessionKey,
+      m3u8URL: m3u8URL,
+      m3u8Info: m3u8Info,
+      cacheManager: cacheManager,
+      segmentDir: segmentDir,
+    );
+  }
 
   /// 创建 StreamSession — 对应后端 NewStreamSession
   ///
@@ -230,6 +251,19 @@ class StreamSession {
     appLogger.i('[StreamSession] 停止: sessionKey=$sessionKey');
   }
 
+  /// 暂停 Session（退出播放页）：停止调度器；
+  /// 将 downloading 分片重置为 pending（保证恢复后调度器能重新入队，不会卡死）；
+  /// 状态置为 paused，请求处理器不再自动重启。
+  void pause() {
+    _scheduler?.stop();
+    _scheduler = null;
+    for (final idx in cacheManager.getDownloadingSegments()) {
+      cacheManager.resetDownloadingToPending(idx);
+    }
+    _state = SessionState.paused;
+    appLogger.i('[StreamSession] 暂停: sessionKey=$sessionKey');
+  }
+
   /// 清理资源
   Future<void> cleanup(bool keepDisk) async {
     stop();
@@ -256,14 +290,18 @@ class StreamSession {
   /// 行级替换重写 m3u8 — 对应后端 rewriteM3U8
   ///
   /// 规则：
-  /// - #EXT-X-KEY: 保留，但将 KeyURI 重写为本地代理接口
+  /// - #EXT-X-KEY: 保留，将 KeyURI 重写为本地代理接口
   /// - TS URL（非空且非 # 开头）：替换为 /hls-segment/{urlKey}/{index}
   /// - #EXT-X-DISCONTINUITY: 由 SegmentInfo.isDiscontinuity 驱动，在对应分片前插入
   /// - 其他行：原样保留
   ///
   /// [urlKey] 用于构建代理 URL 路径的 key，由调用方传入（通常为 cacheKey），
   /// 确保与 VideoCacheProxyServer 路由匹配一致。
-  String _rewriteM3U8(M3u8Info info, String urlKey, String proxyBaseUrl) {
+  String _rewriteM3U8(
+    M3u8Info info,
+    String urlKey,
+    String proxyBaseUrl,
+  ) {
     final sb = StringBuffer();
     var segIndex = 0;
 

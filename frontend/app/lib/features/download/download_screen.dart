@@ -7,6 +7,7 @@ import '../../core/network/api_client.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/models/download.dart';
 import '../../shared/models/enums.dart';
+import '../../shared/widgets/marquee_text.dart';
 import '../download/download_provider.dart';
 import '../settings/douban_image_proxy_provider.dart';
 
@@ -140,7 +141,7 @@ class _DownloadTaskCard extends ConsumerWidget {
     final proxyState = ref.watch(doubanImageProxyProvider);
     ref.read(doubanImageProxyProvider.notifier).checkAndRefresh();
     final baseUrl = ref.read(apiClientProvider).baseUrl;
-    final imageUrl = proxyState.buildImageUrl(task.vodPic, baseUrl);
+    final imageUrl = proxyState.resolveImageUrl(task.vodPic, baseUrl) ?? '';
     final headers = proxyState.httpHeadersForUrl(task.vodPic);
     final statusLabel = _statusLabel(task.status);
     final statusColor = _statusColor(task.status, colors);
@@ -170,7 +171,7 @@ class _DownloadTaskCard extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(task.vodName, style: TextStyle(color: colors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+                MarqueeText(text: task.vodName, style: TextStyle(color: colors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600), staticMaxLines: 1),
                 const SizedBox(height: 4),
                 Text(task.epName, style: TextStyle(color: colors.textSecondary, fontSize: 13)),
                 const SizedBox(height: 4),

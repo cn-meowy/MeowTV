@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/network/api_client.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/models/user_data.dart';
+import '../../shared/widgets/marquee_text.dart';
 import '../history/history_provider.dart';
 import '../settings/douban_image_proxy_provider.dart';
 
@@ -128,7 +129,7 @@ class _HistoryItemCard extends ConsumerWidget {
     final proxyState = ref.watch(doubanImageProxyProvider);
     ref.read(doubanImageProxyProvider.notifier).checkAndRefresh();
     final baseUrl = ref.read(apiClientProvider).baseUrl;
-    final imageUrl = proxyState.buildImageUrl(item.vodPic, baseUrl);
+    final imageUrl = proxyState.resolveImageUrl(item.vodPic, baseUrl) ?? '';
     final headers = proxyState.httpHeadersForUrl(item.vodPic);
     final progressPercent = item.progress.round().clamp(0, 100);
     return GestureDetector(
@@ -159,7 +160,7 @@ class _HistoryItemCard extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(item.vodName, style: TextStyle(color: colors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  MarqueeText(text: item.vodName, style: TextStyle(color: colors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600), staticMaxLines: 1),
                   const SizedBox(height: 4),
                   Text('${item.epName} - ${item.resourceName}', style: TextStyle(color: colors.textSecondary, fontSize: 13)),
                   const SizedBox(height: 6),

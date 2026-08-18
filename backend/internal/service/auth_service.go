@@ -77,7 +77,7 @@ func (s *AuthService) Login(ctx context.Context, req *request.LoginReq, ip strin
 	user, err := s.userRepo.GetByUsername(ctx, req.Username)
 	if err != nil {
 		s.incrementLoginFail(ctx, ip, req.Username)
-		return nil, errs.WithMsg("用户名或密码错误", errs.ErrBadRequest)
+		return nil, errs.WithMsg("用户名或密码错误", errs.ErrUnauthorized)
 	}
 
 	// 4. 校验用户状态
@@ -88,7 +88,7 @@ func (s *AuthService) Login(ctx context.Context, req *request.LoginReq, ip strin
 	// 5. 验证密码
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 		s.incrementLoginFail(ctx, ip, req.Username)
-		return nil, errs.WithMsg("用户名或密码错误", errs.ErrBadRequest)
+		return nil, errs.WithMsg("用户名或密码错误", errs.ErrUnauthorized)
 	}
 
 	// 6. 登录成功，清除失败计数

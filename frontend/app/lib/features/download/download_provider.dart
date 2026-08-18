@@ -4,9 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/network/api_client.dart';
 import '../../core/network/api_constants.dart';
-import '../../core/storage/secure_storage.dart';
 import '../../shared/models/download.dart';
 import '../../shared/models/enums.dart';
+import '../settings/douban_image_proxy_provider.dart';
 
 class DownloadState {
   final List<DownloadTaskItem> items;
@@ -44,11 +44,20 @@ class DownloadState {
 
 class DownloadNotifier extends StateNotifier<DownloadState> {
   final ApiClient _api;
+  /// 获取临时 Token 的回调，用于构建 `download/file/:id?token=...` URL。
+  ///
+  /// 后端 `/api/download/file/:id` 路由使用 `TempTokenAuth` 中间件，
+  /// 只接受临时 Token（query param `token`），不接受 JWT。
+  /// iOS AVPlayer 通过 `video.src` 加载，无法注入 Authorization header，
+  /// 因此必须使用临时 Token 而非 JWT。
+  final Future<String> Function()? _tempTokenProvider;
   Timer? _pollTimer;
   /// 追踪上一次请求的 filterStatus，避免竞态条件覆盖新 filter 的结果。
   int? _pendingFilterIndex;
 
-  DownloadNotifier(this._api) : super(const DownloadState());
+  DownloadNotifier(this._api, {Future<String> Function()? tempTokenProvider})
+      : _tempTokenProvider = tempTokenProvider,
+        super(const DownloadState());
 
   /// Load download list with loading state (for initial load and filter switch).
   Future<void> loadDownloads({DownloadStatus? status}) async {
@@ -207,15 +216,23 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
     }
   }
 
-  /// 构建已下载文件的播放 URL，附加 JWT token 用于认证。
+  /// 构建已下载文件的播放 URL，附加临时 Token 用于认证。
   ///
-  /// 参考 Web 端 `getDownloadFileUrl()`，生成形如
-  /// `{baseUrl}/api/download/file/{taskId}?token={jwt}` 的 URL，
-  /// 供 media_kit Player 直接打开服务器流式播放。
+  /// 后端 `/api/download/file/:id` 路由使用 `TempTokenAuth` 中间件，
+  /// 只接受临时 Token（query param `token`），不接受 JWT。
+  /// iOS AVPlayer 通过 `video.src` 加载，无法注入 Authorization header，
+  /// 因此必须使用临时 Token。若临时 Token 不可用则抛出 [StateError]，
+  /// 由调用方（如 PlayerScreen）捕获并回退到远程播放。
+  ///
+  /// 生成形如 `{baseUrl}/api/download/file/{taskId}?token={tempToken}` 的 URL，
+  /// 供 video_player / Chewie 直接打开服务器流式播放。
   Future<String> getDownloadFileUrl(int taskId) async {
-    final token = await SecureStorageService.instance.getAccessToken();
     final baseUrl = _api.baseUrl;
-    return '$baseUrl${ApiConstants.downloadFile}/$taskId${token != null && token.isNotEmpty ? '?token=${Uri.encodeComponent(token)}' : ''}';
+    final tempToken = _tempTokenProvider != null ? await _tempTokenProvider() : '';
+    if (tempToken.isEmpty) {
+      throw StateError('temp_token_unavailable');
+    }
+    return '$baseUrl${ApiConstants.downloadFile}/$taskId?token=${Uri.encodeComponent(tempToken)}';
   }
 
   @override
@@ -228,7 +245,12 @@ class DownloadNotifier extends StateNotifier<DownloadState> {
 
 final downloadProvider = StateNotifierProvider<DownloadNotifier, DownloadState>((ref) {
   final api = ref.read(apiClientProvider);
-  final notifier = DownloadNotifier(api);
+  // 传入临时 Token 获取回调，供 getDownloadFileUrl 构建带 token 的播放 URL。
+  // 后端 download/file 路由只接受临时 Token，不接受 JWT。
+  final notifier = DownloadNotifier(
+    api,
+    tempTokenProvider: () => ref.read(doubanImageProxyProvider.notifier).getCachedToken(),
+  );
 
   // 当没有任何 Widget watch 此 provider 时，自动停止轮询，
   // 避免在 Element 已 defunct 后仍通过 state= 触发通知导致崩溃。

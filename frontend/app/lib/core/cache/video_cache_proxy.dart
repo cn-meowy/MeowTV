@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path_provider/path_provider.dart';
 
 import '../logger/app_logger.dart';
@@ -28,8 +29,7 @@ class VideoCacheProxyServer {
   int? _port;
   bool _isRunning = false;
 
-  /// LAN 模式代理服务器（绑定 0.0.0.0，供投屏设备访问）
-  HttpServer? _lanServer;
+  /// LAN 模式标记（合并为单服务器后仅用于兼容旧调用方）。
   int? _lanPort;
   bool _isLanRunning = false;
 
@@ -55,6 +55,13 @@ class VideoCacheProxyServer {
   HttpClient? _remoteClient;
   HttpClient get remoteClient => _remoteClient ??= HttpClient();
 
+  /// 本机网卡地址缓存（小写归一化），用于「源 IP 命中本机接口」判定。
+  /// 缓存避免每次请求都调用 [NetworkInterface.list]，仅在快速私有段检查
+  /// 失败后懒加载，并以 [_localInterfaceIpsTtl] 过期重新拉取。
+  Set<String>? _localInterfaceIps;
+  DateTime? _localInterfaceIpsAt;
+  static const Duration _localInterfaceIpsTtl = Duration(seconds: 60);
+
   /// 获取代理服务器端口
   int? get port => _port;
 
@@ -67,16 +74,22 @@ class VideoCacheProxyServer {
   /// 检查指定 key 是否正在被代理缓存
   bool isActivelyProxying(String key) => _activeProxyKeys.contains(key);
 
-  /// 启动代理服务器（绑定 localhost，仅本机可访问）
+  /// 启动代理服务器（绑定 0.0.0.0，本机和投屏设备均可访问）。
+  ///
+  /// 局域网 IP 过滤由 [_handleRequest] 在入口处统一执行；
+  /// 放行规则见 [_isPrivateAddress] 与 [isAllowedClientForTest]：
+  /// 1. 源地址为 loopback / RFC1918 / fe80 / ::1（[_isPrivateAddress]）。
+  /// 2. 源地址命中设备自身任一网卡地址（覆盖 iOS VPN/utun 公网段自连场景）。
+  /// 3. Host 头指向 loopback（localhost / 127.* / ::1）。
   Future<void> start() async {
     if (_isRunning) return;
 
     try {
-      _server = await HttpServer.bind('localhost', 0); // port=0 让 OS 分配随机端口
+      _server = await HttpServer.bind('0.0.0.0', 0); // port=0 让 OS 分配随机端口
       _port = _server!.port;
       _isRunning = true;
       _parser = M3u8Parser();
-      appLogger.i('[VideoCacheProxy] 代理服务器已启动，端口: $_port');
+      appLogger.i('[VideoCacheProxy] 代理服务器已启动 (0.0.0.0)，端口: $_port');
 
       // 监听请求
       _server!.listen(_handleRequest, onError: (error) {
@@ -89,34 +102,14 @@ class VideoCacheProxyServer {
     }
   }
 
-  /// 启动 LAN 模式代理服务器（绑定 0.0.0.0，供投屏设备访问）
+  /// 兼容旧调用方：单服务器后等价于 [start]，仅记录 LAN 端口引用。
   ///
-  /// 投屏代理模式下需要投屏设备能访问手机上的代理缓存服务器，
-  /// 因此绑定 0.0.0.0 而非 localhost。
-  /// 共享 localhost 服务器的 _keyUrlMap、_sessions 等数据。
+  /// 历史背景：早期实现中 LAN 投屏需要独立的 0.0.0.0 服务器。
+  /// 合并为单服务器后此方法仅为兼容 [player_screen.dart] 中的现有调用而保留。
   Future<void> startLan() async {
-    if (_isLanRunning) return;
-
-    // 确保 localhost 服务器已启动
-    if (!_isRunning) {
-      await start();
-    }
-
-    try {
-      _lanServer = await HttpServer.bind('0.0.0.0', 0);
-      _lanPort = _lanServer!.port;
-      _isLanRunning = true;
-      appLogger.i('[VideoCacheProxy] LAN 代理服务器已启动，端口: $_lanPort');
-
-      // 复用同一请求处理器
-      _lanServer!.listen(_handleRequest, onError: (error) {
-        appLogger.e('[VideoCacheProxy] LAN 服务器错误', error: error);
-      });
-    } catch (e) {
-      appLogger.e('[VideoCacheProxy] LAN 代理服务器启动失败', error: e);
-      _isLanRunning = false;
-      rethrow;
-    }
+    await start();
+    _isLanRunning = true;
+    _lanPort = _port;
   }
 
   /// 停止代理服务器
@@ -160,18 +153,22 @@ class VideoCacheProxyServer {
   }
 
   /// 构建代理 URL — 供 Player.open 使用
-  String proxyUrl(String cacheKey) {
+  ///
+  /// [lanIp] 非空时返回 LAN IP URL（投屏设备可访问），为空时回退 localhost。
+  String proxyUrl(String cacheKey, {String? lanIp}) {
     assert(_isRunning && _port != null);
-    return 'http://localhost:$_port/proxy/$cacheKey';
+    final host = (lanIp != null && lanIp.isNotEmpty) ? lanIp : 'localhost';
+    return 'http://$host:$_port/proxy/$cacheKey';
   }
 
   /// 根据原始 URL 类型构建代理 URL。
   ///
   /// m3u8 走 /hls/ 路由（重写 playlist），MP4 走 /proxy/ 路由（直链代理）。
-  String proxyUrlForType(String cacheKey, String originalUrl) {
+  String proxyUrlForType(String cacheKey, String originalUrl, {String? lanIp}) {
     assert(_isRunning && _port != null);
+    final host = (lanIp != null && lanIp.isNotEmpty) ? lanIp : 'localhost';
     final prefix = _isHlsUrl(originalUrl) ? 'hls' : 'proxy';
-    return 'http://localhost:$_port/$prefix/$cacheKey';
+    return 'http://$host:$_port/$prefix/$cacheKey';
   }
 
   /// 构建强制 HLS 代理 URL — 供方案B 边下边播使用。
@@ -184,26 +181,24 @@ class VideoCacheProxyServer {
   /// 当 [_isHlsUrl] 误判 m3u8 URL 为 MP4 时，/proxy/ 路由返回的 m3u8 文本
   /// 会被 ExoPlayer 的 ProgressiveMediaSource 用 MP4 Extractor 解析而失败；
   /// /hls/ 路由返回的 m3u8 文本则会被 ExoPlayer 的 HLS 解析器正确处理。
-  String hlsProxyUrl(String cacheKey) {
-    assert(_isRunning && _port != null);
-    return 'http://localhost:$_port/hls/$cacheKey';
-  }
-
-  /// 构建 LAN 模式的 HLS 代理 URL（供投屏设备访问）
   ///
-  /// [lanIp] 为手机在局域网中的 IP 地址（如 192.168.1.100）。
-  /// 返回 `http://{lanIp}:{lanPort}/hls/{cacheKey}`。
-  /// 投屏设备通过此 URL 访问手机上的代理缓存。
-  String lanHlsProxyUrl(String cacheKey, String lanIp) {
-    assert(_isLanRunning && _lanPort != null);
-    return 'http://$lanIp:$_lanPort/hls/$cacheKey';
+  /// [lanIp] 非空时返回 LAN IP URL（投屏设备可访问），为空时回退 localhost。
+  String hlsProxyUrl(String cacheKey, {String? lanIp}) {
+    assert(_isRunning && _port != null);
+    final host = (lanIp != null && lanIp.isNotEmpty) ? lanIp : 'localhost';
+    return 'http://$host:$_port/hls/$cacheKey';
   }
 
-  /// 构建 LAN 模式的代理 URL（根据原始 URL 类型选择 /hls/ 或 /proxy/）
+  /// 构建 LAN 模式的 HLS 代理 URL（兼容旧调用方）。
+  ///
+  /// 等价于 [hlsProxyUrl] 传入 [lanIp]。
+  String lanHlsProxyUrl(String cacheKey, String lanIp) {
+    return hlsProxyUrl(cacheKey, lanIp: lanIp);
+  }
+
+  /// 构建 LAN 模式的代理 URL（兼容旧调用方）。
   String lanProxyUrlForType(String cacheKey, String originalUrl, String lanIp) {
-    assert(_isLanRunning && _lanPort != null);
-    final prefix = _isHlsUrl(originalUrl) ? 'hls' : 'proxy';
-    return 'http://$lanIp:$_lanPort/$prefix/$cacheKey';
+    return proxyUrlForType(cacheKey, originalUrl, lanIp: lanIp);
   }
 
   /// LAN 代理服务器端口
@@ -211,6 +206,141 @@ class VideoCacheProxyServer {
 
   /// LAN 代理服务器是否运行中
   bool get isLanRunning => _isLanRunning;
+
+  /// 判断远程地址是否为私有/局域网地址。
+  ///
+  /// 允许：127.x（loopback）、10.x、172.16-31.x、192.168.x、IPv6 fe80/::1。
+  /// 这是入口过滤的快速路径，仅覆盖 RFC1918/loopback 段；
+  /// 完整的放行判定（含 iOS VPN/utun 公网段自连 + Host 头兜底）见
+  /// [isAllowedClientForTest] 与 [_handleRequest]。
+  bool _isPrivateAddress(InternetAddress addr) {
+    if (addr.isLoopback) return true;
+    final ip = addr.address;
+    if (addr.type == InternetAddressType.IPv6) {
+      return ip.startsWith('fe80') || ip == '::1';
+    }
+    final parts = ip.split('.');
+    if (parts.length != 4) return false;
+    final a = int.tryParse(parts[0]) ?? -1;
+    final b = int.tryParse(parts[1]) ?? -1;
+    if (a == 10) return true;
+    if (a == 172 && b >= 16 && b <= 31) return true;
+    if (a == 192 && b == 168) return true;
+    return false;
+  }
+
+  /// 获取本机网卡地址集合（带 TTL 缓存）。
+  ///
+  /// 仅在 [_handleRequest] 快速私有段检查失败后懒调用，避免拖慢热路径。
+  /// 拉取失败（权限、平台不支持等）时返回空集合并记警告日志，调用方按
+  /// 「接口匹配」不命中处理。
+  Future<Set<String>> _getLocalInterfaceIps() async {
+    final now = DateTime.now();
+    final cached = _localInterfaceIps;
+    final at = _localInterfaceIpsAt;
+    if (cached != null && at != null && now.difference(at) < _localInterfaceIpsTtl) {
+      return cached;
+    }
+    try {
+      final list = await NetworkInterface.list(
+        includeLoopback: false,
+        includeLinkLocal: false,
+      );
+      final ips = <String>{};
+      for (final iface in list) {
+        for (final addr in iface.addresses) {
+          ips.add(addr.address.toLowerCase());
+        }
+      }
+      _localInterfaceIps = ips;
+      _localInterfaceIpsAt = now;
+      return ips;
+    } catch (e) {
+      appLogger.w('[VideoCacheProxy] 获取本机网卡地址失败', error: e);
+      _localInterfaceIps = <String>{};
+      _localInterfaceIpsAt = now;
+      return _localInterfaceIps!;
+    }
+  }
+
+  /// 判断客户端是否允许访问本地代理服务器（纯函数，可单测）。
+  ///
+  /// 放行规则（按顺序短路）：
+  /// 1. [remoteIp] 为 loopback / RFC1918 / fe80 / ::1（[_isPrivateAddress] 等价判断）。
+  /// 2. [remoteIp]（小写）命中 [localInterfaceIps]：TCP 握手能完成且源为本机接口，
+  ///    必为自连流量。覆盖 iOS VPN/utun 分配公网段地址时 AVPlayer（mediaserverd）
+  ///    通过公网源 IP 自连的场景。
+  /// 3. [hostHeader] 归一化后指向 loopback（localhost / 127.* / ::1，可带端口、IPv6 括号）。
+  ///
+  /// 注意：Host 头可由客户端伪造，但本威胁模型本就允许任意 LAN 设备访问
+  /// （投屏场景），且端口随机、手机通常在 NAT 后，风险可接受；日志留痕。
+  ///
+  /// 为可测试性设计为静态方法 + 显式参数注入；测试请使用
+  /// `isAllowedClientForTest`（ForTest 后缀与项目内既有约定一致）。
+  static bool isAllowedClientForTest(
+    String remoteIp,
+    String? hostHeader,
+    Set<String> localInterfaceIps,
+  ) {
+    final remoteLower = remoteIp.toLowerCase();
+    if (_isPrivateAddressString(remoteLower)) return true;
+    if (localInterfaceIps.contains(remoteLower)) return true;
+    if (_isLoopbackHost(hostHeader)) return true;
+    return false;
+  }
+
+  /// 字符串形式的私有/局域网地址判定（与 [_isPrivateAddress] 逻辑对齐）。
+  static bool _isPrivateAddressString(String ip) {
+    if (ip == '::1') return true;
+    if (ip.startsWith('fe80')) return true;
+    if (ip == '127.0.0.1' || ip.startsWith('127.')) return true;
+    final parts = ip.split('.');
+    if (parts.length != 4) return false;
+    final a = int.tryParse(parts[0]) ?? -1;
+    final b = int.tryParse(parts[1]) ?? -1;
+    if (a == 10) return true;
+    if (a == 172 && b >= 16 && b <= 31) return true;
+    if (a == 192 && b == 168) return true;
+    return false;
+  }
+
+  /// 归一化 Host 头并判定是否指向 loopback。
+  ///
+  /// 处理：去端口（小写）、IPv6 括号形式 `[::1]:port`、`localhost` 大小写。
+  static bool _isLoopbackHost(String? hostHeader) {
+    if (hostHeader == null || hostHeader.isEmpty) return false;
+    var h = hostHeader.toLowerCase();
+    if (h.startsWith('[')) {
+      final end = h.indexOf(']');
+      if (end > 0) h = h.substring(1, end);
+    } else {
+      final colon = h.indexOf(':');
+      if (colon > 0) h = h.substring(0, colon);
+    }
+    if (h == 'localhost' || h == '::1') return true;
+    if (h.startsWith('127.')) return true;
+    return false;
+  }
+
+  /// 放行判定结果，含放行原因（用于日志区分）。
+  Future<_AllowResult> _checkExtendedAllowance(
+    InternetAddress remoteAddress,
+    String? hostHeader,
+    String path,
+  ) async {
+    final remoteIp = remoteAddress.address.toLowerCase();
+
+    final localIps = await _getLocalInterfaceIps();
+    if (localIps.contains(remoteIp)) {
+      return const _AllowResult._(true, AllowReason.interfaceMatch);
+    }
+
+    if (_isLoopbackHost(hostHeader)) {
+      return const _AllowResult._(true, AllowReason.loopbackHost);
+    }
+
+    return const _AllowResult._(false, AllowReason.none);
+  }
 
   /// 判断 URL 是否为 HLS m3u8 类型 — 仅匹配路径后缀，避免误判查询参数中的 .m3u8
   static bool _isHlsUrl(String url) {
@@ -249,19 +379,38 @@ class VideoCacheProxyServer {
     }
   }
 
-  /// 暂停所有活跃的代理缓存（退出播放页时调用）
-  Future<void> pauseActiveProxying() async {
-    for (final key in _activeProxyKeys.toList()) {
+  /// 暂停所有活跃的代理缓存（退出播放页时调用）。
+  ///
+  /// 改为遍历 [_sessions]（全部 session），不再依赖 [_activeProxyKeys]：
+  /// 旧实现按 _activeProxyKeys 匹配 session 不可靠，_handleHlsSegment 写入的
+  /// 事务键 $cacheKey-segment-$i 永远匹配不到 _sessions，_handleProxy 的 finally
+  /// 又会把 bare cacheKey 移除，导致退出时集合为空什么也停不了。
+  ///
+  /// [exceptKey] 非空时跳过该 cacheKey 的暂停（投屏中 TV 正在拉流，
+  /// 保留当前投屏 session 继续预下载）。
+  Future<void> pauseActiveProxying({String? exceptKey}) async {
+    var pausedCount = 0;
+    for (final entry in _sessions.entries.toList()) {
+      final key = entry.key;
+      if (exceptKey != null && key == exceptKey) {
+        continue;
+      }
       try {
-        final session = _sessions[key];
-        if (session != null) {
-          session.stop();
-        }
+        entry.value.pause();
+        pausedCount++;
       } catch (e) {
         appLogger.e('[VideoCacheProxy] 暂停代理缓存失败: $key', error: e);
       }
     }
-    appLogger.i('[VideoCacheProxy] 已暂停所有活跃代理缓存');
+    // 清理 exceptKey 之外的瞬态事务键，避免遗留影响下次判定
+    final staleKeys = _activeProxyKeys
+        .where((k) => exceptKey == null || !(k == exceptKey || k.startsWith('$exceptKey-segment-')))
+        .toList();
+    for (final k in staleKeys) {
+      _activeProxyKeys.remove(k);
+    }
+    appLogger.i(
+        '[VideoCacheProxy] 已暂停所有活跃代理缓存: paused=$pausedCount, exceptKey=$exceptKey, clearedKeys=${staleKeys.length}');
   }
 
   /// 恢复指定 key 的代理缓存（进入播放页时调用）
@@ -304,12 +453,92 @@ class VideoCacheProxyServer {
     return _sessions[cacheKey];
   }
 
+  // ==================== 测试辅助（仅单测使用） ====================
+
+  /// 注入测试用 session（仅供单元测试使用）。
+  @visibleForTesting
+  void injectSessionForTest(String cacheKey, StreamSession session) {
+    _sessions[cacheKey] = session;
+  }
+
+  /// 清除所有测试注入的 session（仅供单元测试使用）。
+  @visibleForTesting
+  void clearSessionsForTest() {
+    _sessions.clear();
+    _activeProxyKeys.clear();
+  }
+
+  /// 读取当前活跃代理 key 集合（仅供单元测试使用）。
+  @visibleForTesting
+  Set<String> get activeProxyKeysForTest =>
+      Set<String>.unmodifiable(_activeProxyKeys);
+
+  /// 主动预创建 Session（投屏前调用），确保 m3u8 已解析、duration 可用。
+  ///
+  /// [StreamSession] 正常在视频播放器首次请求 `/hls/{cacheKey}` 时才异步创建，
+  /// 投屏刚启动时 [getSession] 可能返回 null，导致 duration 兜底失效、
+  /// 预热分片不执行。本方法在投屏前主动触发 m3u8 解析并创建 session，
+  /// 让后续 [getSession] 调用能立即拿到可用的 session。
+  ///
+  /// 返回创建（或复用）的 session；URL 未注册或解析失败时返回 null。
+  Future<StreamSession?> ensureSession(String cacheKey) async {
+    final url = getUrl(cacheKey);
+    if (url == null) return null;
+    return await _getOrCreateSession(cacheKey, url);
+  }
+
   // ==================== HTTP 请求处理 ====================
+
+  /// 构造 proxyBaseUrl 用于重写 m3u8 分片 URL。
+  ///
+  /// 单服务器后统一使用请求自带的 Host + 实际端口：
+  /// - 本地播放器：`Host: localhost:port` → 重写为 `localhost:port`
+  /// - 投屏设备：`Host: 192.168.x.x:port` → 重写为 `192.168.x.x:port`
+  ///
+  /// 注意：mpv/FFmpeg 发送的 Host 头可能不含端口号（即使原始请求 URL 包含端口），
+  /// 因此必须显式附加代理服务器的实际端口，否则重写后的 TS URL 缺少端口
+  /// 会导致 mpv 回连端口 80 失败（Connection refused）。
+  String _resolveProxyBaseUrl(HttpRequest request) {
+    final hostHeader = request.headers.host;
+    final localPort = request.connectionInfo?.localPort;
+    final port = localPort ?? _port;
+    if (hostHeader != null && hostHeader.isNotEmpty) {
+      return hostHeader.contains(':')
+          ? 'http://$hostHeader'
+          : 'http://$hostHeader:$port';
+    }
+    return 'http://0.0.0.0:$port';
+  }
 
   /// 处理 HTTP 请求 — 替代 shelf 的 _handleRequest
   Future<void> _handleRequest(HttpRequest request) async {
     final path = request.uri.path;
     appLogger.d('[VideoCacheProxy] ${request.method} ${request.uri}');
+
+    // IP 过滤：服务器绑定 0.0.0.0 是为了让投屏设备能连进来，公网访问必须在入口处拒绝。
+    // 放行规则（见 [_isPrivateAddress] / [isAllowedClientForTest]）：
+    //   1) 源 IP 为 loopback / RFC1918 / fe80 / ::1（快速路径）。
+    //   2) 源 IP 命中本机任一网卡地址 — 覆盖 iOS VPN/utun 公网段自连场景。
+    //   3) Host 头指向 loopback（localhost / 127.* / ::1）— 兜底。
+    final remoteAddress = request.connectionInfo?.remoteAddress;
+    if (remoteAddress != null) {
+      final _AllowResult allowed;
+      if (_isPrivateAddress(remoteAddress)) {
+        allowed = const _AllowResult._(true, AllowReason.privateRange);
+      } else {
+        allowed = await _checkExtendedAllowance(remoteAddress, request.headers.host, path);
+      }
+      if (!allowed.allowed) {
+        appLogger.w('[VideoCacheProxy] 拒绝非局域网访问: $remoteAddress, path=$path');
+        request.response.statusCode = HttpStatus.forbidden;
+        await request.response.close();
+        return;
+      }
+      if (allowed.reason != AllowReason.privateRange) {
+        appLogger.i(
+            '[VideoCacheProxy] 放行自连流量(${allowed.reason.name}): $remoteAddress, path=$path');
+      }
+    }
 
     try {
       // 路由: /proxy/{cacheKey} — MP4 直链
@@ -323,6 +552,15 @@ class VideoCacheProxyServer {
       if (path.startsWith('/hls/')) {
         final cacheKey = path.substring('/hls/'.length);
         await _handleHlsPlaylist(request, cacheKey);
+        return;
+      }
+
+      // 路由: /hls-dlna/{cacheKey} — DLNA 投屏专用 m3u8（已废弃）
+      // plan 1786714898308：代理层是透传密文，TV 端与读远程源一样自己拉 key 自己解密。
+      // 因此本地播放器与 TV 统一使用 /hls/{cacheKey} 路由，无需再单独提供 /hls-dlna/。
+      // 保留注释仅为提醒：旧 TV 缓存或第三方 m3u8 链接可能仍指向 /hls-dlna/，将落到下方 404。
+      if (path.startsWith('/hls-dlna/')) {
+        _sendNotFound(request, '/hls-dlna/ is deprecated, use /hls/');
         return;
       }
 
@@ -392,26 +630,25 @@ class VideoCacheProxyServer {
       }
 
       // 确保调度器在运行
-      if (session.state != SessionState.active && session.state != SessionState.completed) {
+      // 仅 created / idle 可自动重启：paused（退出播放页）不重启，
+      // saving/expired/error 也不重启，避免在错误状态上继续下载。
+      if (session.state == SessionState.created || session.state == SessionState.idle) {
         session.start();
       }
 
-      // 构建代理服务器基础 URL
-      // 注意：mpv/FFmpeg 发送的 Host 头通常不含端口号（如 "Host: localhost"），
-      // 即使原始请求 URL 包含端口。因此必须始终显式附加代理服务器的实际端口，
-      // 否则重写后的 TS URL 会缺少端口导致 mpv 回连端口 80 失败（Connection refused）。
-      final hostHeader = request.headers.host;
-      appLogger.d('[VideoCacheProxy] m3u8 请求 Host 头: $hostHeader, 代理端口: $_port');
-      final host = hostHeader != null
-          ? (hostHeader.contains(':') ? hostHeader : '$hostHeader:$_port')
-          : 'localhost:$_port';
-      final proxyBaseUrl = 'http://$host';
+      // 构建代理服务器基础 URL（按请求来源端口选择 localhost/lan 端口，
+      // 确保投屏设备拿到的分片 URL 指向其能访问的 lan server 端口）
+      final proxyBaseUrl = _resolveProxyBaseUrl(request);
 
       // 使用完全重建的 m3u8（从解析数据重新生成，确保 HLS 标签完整）
       // 解决 Android 上 mpv/FFmpeg HLS demuxer 因标签缺失导致 PTS 重建错误、
       // 播放位置反复跳回开头的问题
       final rewrittenM3U8 = session.buildRewrittenM3U8(proxyBaseUrl, urlKey: cacheKey);
 
+      // m3u8 playlist 不支持 Range 请求，强制返回完整内容（200 OK）。
+      // 某些 DLNA 渲染器/libmpv 会发 Range: bytes=0-，若上游返回 206 会导致
+      // dart_cast MediaProxy 的 m3u8 重写条件失败（要求 200），分片 URL 不被
+      // 重写 → TV 请求原始相对路径 → 404。此处强制 200 规避该问题。
       request.response
         ..headers.contentType = ContentType('application', 'vnd.apple.mpegurl')
         ..headers.set('Cache-Control', 'no-cache, no-store')
@@ -453,24 +690,30 @@ class VideoCacheProxyServer {
       // 如果分片还在 Pending/Failed 状态，通知调度器优先下载
       var status = cacheManager.getStatus(segIndex);
       if (status == SegmentStatus.pending || status == SegmentStatus.failed) {
-        // 调度器可能已停止（如 pauseActiveProxying 后），需要临时重启
-        if (session.state != SessionState.active && session.state != SessionState.completed) {
-          session.start();
-        }
-        session.notifyUrgentSegment(segIndex);
+        // 仅在 active 时才尝试让调度器下载：paused（退出播放页）不重启调度器，
+        // 也不在 onDone 上空等 10s（调度器不在时 onDone 永不完成），直接落入后续
+        // 缓存命中检查 → 未缓存则 _proxySegmentFromOrigin 透传。
+        // 同样的重启门槛：仅 created / idle 可被请求处理器自动重启。
+        if (session.state == SessionState.active) {
+          session.notifyUrgentSegment(segIndex);
 
-        // 等待分片下载完成（最多 10 秒），优先使用调度器下载的缓存数据。
-        // 避免透传时因防盗链/UA 检查导致远程源返回非 TS 数据。
-        appLogger.d('[VideoCacheProxy] 等待分片下载: segIndex=$segIndex, status=$status');
-        try {
-          final seg = cacheManager.getSegment(segIndex);
-          if (seg != null && !seg.isDone) {
-            await seg.onDone.timeout(const Duration(seconds: 10));
+          // 等待分片下载完成（最多 10 秒），优先使用调度器下载的缓存数据。
+          // 避免透传时因防盗链/UA 检查导致远程源返回非 TS 数据。
+          appLogger.d('[VideoCacheProxy] 等待分片下载: segIndex=$segIndex, status=$status');
+          try {
+            final seg = cacheManager.getSegment(segIndex);
+            if (seg != null && !seg.isDone) {
+              await seg.onDone.timeout(const Duration(seconds: 10));
+            }
+          } on TimeoutException {
+            appLogger.w('[VideoCacheProxy] 等待分片下载超时，尝试透传: segIndex=$segIndex');
+          } catch (e) {
+            appLogger.w('[VideoCacheProxy] 等待分片下载异常，尝试透传: segIndex=$segIndex', error: e);
           }
-        } on TimeoutException {
-          appLogger.w('[VideoCacheProxy] 等待分片下载超时，尝试透传: segIndex=$segIndex');
-        } catch (e) {
-          appLogger.w('[VideoCacheProxy] 等待分片下载异常，尝试透传: segIndex=$segIndex', error: e);
+        } else if (session.state == SessionState.created || session.state == SessionState.idle) {
+          // 调度器可能已停止（如 pauseActiveProxying 后被 resumeProxyCache / start 重启前），
+          // 需要临时重启（与原行为一致，但状态门槛收紧）
+          session.start();
         }
       }
 
@@ -857,16 +1100,14 @@ class VideoCacheProxyServer {
       }
 
       // 确保调度器在运行
-      if (session.state != SessionState.active && session.state != SessionState.completed) {
+      // 仅 created / idle 可自动重启：paused（退出播放页）不重启，
+      // saving/expired/error 也不重启，避免在错误状态上继续下载。
+      if (session.state == SessionState.created || session.state == SessionState.idle) {
         session.start();
       }
 
-      // 构建代理服务器基础 URL
-      final hostHeader = request.headers.host;
-      final host = hostHeader != null
-          ? (hostHeader.contains(':') ? hostHeader : '$hostHeader:$_port')
-          : 'localhost:$_port';
-      final proxyBaseUrl = 'http://$host';
+      // 构建代理服务器基础 URL（按请求来源端口选择 localhost/lan 端口）
+      final proxyBaseUrl = _resolveProxyBaseUrl(request);
 
       // 使用完全重建的 m3u8（从解析数据重新生成，确保 HLS 标签完整）
       final rewrittenM3U8 = session.buildRewrittenM3U8(proxyBaseUrl, urlKey: cacheKey);
@@ -1079,4 +1320,21 @@ class VideoCacheProxyServer {
       ..write(message)
       ..close();
   }
+}
+
+/// 放行来源枚举 — 用于 [_handleRequest] 日志区分命中哪条规则。
+///
+/// `privateRange` 对应快速路径 [_isPrivateAddress]，不打印单独放行日志；
+/// `interfaceMatch` / `loopbackHost` 为新增扩展放行规则。
+enum AllowReason {
+  none,
+  privateRange,
+  interfaceMatch,
+  loopbackHost,
+}
+
+class _AllowResult {
+  const _AllowResult._(this.allowed, this.reason);
+  final bool allowed;
+  final AllowReason reason;
 }

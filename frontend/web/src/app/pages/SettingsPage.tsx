@@ -1,5 +1,5 @@
 import { useState, lazy, Suspense } from "react";
-import { Link, FolderOpen, Users, HardDrive, Globe, Zap } from "lucide-react";
+import { Link, FolderOpen, Users, HardDrive, Globe, Zap, Home } from "lucide-react";
 import { GradientText } from "@/app/components/GradientText";
 import { THEMES } from "@/app/components/Navbar";
 import { useThemeStore } from "@/stores/theme";
@@ -11,9 +11,10 @@ const UserTab = lazy(() => import("./settings/UserTab").then(m => ({ default: m.
 const DownloadConfigTab = lazy(() => import("./settings/DownloadConfigTab").then(m => ({ default: m.DownloadConfigTab })));
 const DoubanConfigTab = lazy(() => import("./settings/DoubanConfigTab").then(m => ({ default: m.DoubanConfigTab })));
 const StreamConfigTab = lazy(() => import("./settings/StreamConfigTab").then(m => ({ default: m.StreamConfigTab })));
+const HomeConfigTab = lazy(() => import("./settings/HomeConfigTab").then(m => ({ default: m.HomeConfigTab })));
 
 // ── Tab 定义 ──────────────────────────────────────────────────────────
-type TabKey = "subscribe" | "resource-group" | "user" | "download" | "douban" | "stream";
+type TabKey = "subscribe" | "resource-group" | "user" | "download" | "douban" | "stream" | "home";
 
 const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
   { key: "subscribe",      label: "订阅管理",   icon: Link },
@@ -22,6 +23,7 @@ const TABS: { key: TabKey; label: string; icon: React.ElementType }[] = [
   { key: "download",       label: "下载配置",   icon: HardDrive },
   { key: "douban",         label: "豆瓣配置",   icon: Globe },
   { key: "stream",         label: "流代理配置",  icon: Zap },
+  { key: "home",           label: "首页配置",   icon: Home },
 ];
 
 // ── Tab 加载占位 ──────────────────────────────────────────────────────
@@ -85,6 +87,7 @@ export default function SettingsPage() {
         {activeTab === "download" && <DownloadConfigTab theme={theme} />}
         {activeTab === "douban" && <DoubanConfigTab theme={theme} />}
         {activeTab === "stream" && <StreamConfigTab theme={theme} />}
+        {activeTab === "home" && <HomeConfigTab theme={theme} />}
       </Suspense>
     </div>
   );

@@ -9,7 +9,9 @@ import (
 )
 
 // SeedSysConfig 初始化 sys_config 表的默认数据
-func SeedSysConfig(db *gorm.DB) {
+// demoEnabled 表示是否启用了 demo 模式（配置了本地数据目录），
+// 仅在启用时才写入本地演示资源站点，避免未配置本地目录时加载"本地资源"。
+func SeedSysConfig(db *gorm.DB, demoEnabled bool) {
 	configs := []entity.SysConfig{
 		// --- JSON 数据通道配置 ---
 		{
@@ -163,6 +165,36 @@ func SeedSysConfig(db *gorm.DB) {
 			SortOrder: 1,
 			IsEnabled: true,
 		},
+		// --- 首页区块标题配置 ---
+		{
+			ConfigKey:   "home_section_titles",
+			ConfigGroup: "home",
+			Title:       "首页区块标题",
+			Title1:      "区块一标题", Value1: "热门影视",
+			Title2: "区块二标题", Value2: "热播剧集",
+			SortOrder: 1,
+			IsEnabled: true,
+		},
+		// --- 本地演示资源站点（Apple Store 审核演示模式，demo 模式自动启用） ---
+		// 仅在 demo 模式（配置了本地数据目录）下写入，避免未指定目录时加载"本地资源"。
+	}
+
+	// demo 模式启用时才追加本地演示资源站点配置
+	if demoEnabled {
+		configs = append(configs, entity.SysConfig{
+			ConfigKey:   "local_demo_domain",
+			ConfigGroup: "resource_site",
+			Title:       "本地演示资源",
+			Value1:      "local://demo",
+			Value2:      "local://demo",
+			Value3:      "Apple Store 审核演示本地数据",
+			Value4:      "0",
+			Value5:      "0", // 非NSFW
+			Value6:      "1", // 允许搜索
+			SortOrder:   999,
+			IsEnabled:   true,
+			Remark:      "本地演示虚拟站点，数据来自 MEOWTV_DEMO_DATA_DIR 扫描",
+		})
 	}
 
 	seeded := 0

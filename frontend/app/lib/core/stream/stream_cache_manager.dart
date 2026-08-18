@@ -31,6 +31,17 @@ class StreamCacheManager {
   StreamCacheManager._();
   static final StreamCacheManager instance = StreamCacheManager._();
 
+  /// autoEvictIfNeeded 防抖：该方法在每个分片下载完成后被调用（高频），
+  /// 若每次都触发 LRU 全目录扫描会显著拖累播放。60 秒内只执行一次真正清理。
+  DateTime? _lastEvictAt;
+  int _evictionsSuppressed = 0;
+
+  /// 测试/调试用：重置防抖状态
+  void resetEvictDebounce() {
+    _lastEvictAt = null;
+    _evictionsSuppressed = 0;
+  }
+
   /// 获取流代理缓存根目录
   Future<Directory> get streamCacheDir async {
     final appDir = await getApplicationDocumentsDirectory();
@@ -107,6 +118,10 @@ class StreamCacheManager {
 
   /// 自动清理：如果缓存超过上限，删除最早的 session 缓存直到低于上限
   /// 返回被清理的条目数量
+  ///
+  /// 该方法在每个分片下载完成后被 VideoCacheProxyServer 调用（高频），
+  /// 内置 60 秒防抖：窗口内重复触发仅累计 suppressed 计数并跳过实际清理，
+  /// 避免频繁的 LRU 全目录扫描拖累播放性能。
   Future<int> autoEvictIfNeeded() async {
     final config = await StreamCacheConfig.load();
     final maxSizeBytes = config.maxCacheSizeBytes;
@@ -114,7 +129,23 @@ class StreamCacheManager {
 
     if (currentSize <= maxSizeBytes) return 0;
 
-    appLogger.i('[StreamCacheManager] 缓存超限: current=${_formatSize(currentSize)}, max=${_formatSize(maxSizeBytes)}，开始自动清理');
+    // 60 秒防抖：窗口内已触发过清理则跳过，仅累计抑制计数
+    final now = DateTime.now();
+    const debounceWindow = Duration(seconds: 60);
+    if (_lastEvictAt != null && now.difference(_lastEvictAt!) < debounceWindow) {
+      _evictionsSuppressed++;
+      appLogger.i('[StreamCacheManager] 缓存超限触发清理: current=${_formatSize(currentSize)}, '
+          'max=${_formatSize(maxSizeBytes)}（60s 内已跳过 $_evictionsSuppressed 次）');
+      return 0;
+    }
+
+    _lastEvictAt = now;
+    final suppressed = _evictionsSuppressed;
+    _evictionsSuppressed = 0;
+
+    appLogger.i('[StreamCacheManager] 缓存超限: current=${_formatSize(currentSize)}, '
+        'max=${_formatSize(maxSizeBytes)}，开始自动清理'
+        '${suppressed > 0 ? '（60s 内已跳过 $suppressed 次）' : ''}');
 
     final entries = await getCacheEntries();
     var evicted = 0;

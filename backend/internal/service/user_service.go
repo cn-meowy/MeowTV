@@ -81,7 +81,7 @@ func (s *UserService) ChangePassword(ctx context.Context, userID int64, req *req
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)); err != nil {
-		return errs.WithMsg("旧密码不正确", errs.ErrBadRequest)
+		return errs.WithMsg("旧密码不正确", errs.ErrUnauthorized)
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
@@ -133,6 +133,13 @@ func (s *UserService) CreateUser(ctx context.Context, req *request.CreateUserReq
 		return nil, errs.WithMsg("用户名已存在", errs.ErrConflict)
 	}
 
+	// 如果指定了 group_id，先校验用户组存在
+	if req.GroupID != nil && *req.GroupID > 0 && s.groupService != nil {
+		if _, err := s.groupService.GetGroupByID(ctx, *req.GroupID); err != nil {
+			return nil, errs.WithMsg("用户组不存在", errs.ErrNotFound)
+		}
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
 		return nil, errs.Wrap(err, errs.ErrInternal)
@@ -154,10 +161,16 @@ func (s *UserService) CreateUser(ctx context.Context, req *request.CreateUserReq
 		Nickname:     nickname,
 		Role:         role,
 		Status:       entity.StatusEnabled,
+		GroupID:      req.GroupID,
 	}
 
 	if err := s.userRepo.Create(ctx, user); err != nil {
 		return nil, errs.Wrap(err, errs.ErrInternal)
+	}
+
+	// 主动清除 group_id 缓存，防止热启动场景下缓存了旧值
+	if s.groupService != nil {
+		s.groupService.ClearUserGroupIDCache(ctx, user.ID)
 	}
 
 	return &response.CreateUserResp{

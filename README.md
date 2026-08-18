@@ -30,15 +30,22 @@
 ## 📖 项目简介
 
 **MeowTV** 是一个全栈视频聚合平台，支持多源资源订阅、聚合搜索、豆瓣榜单、播放历史、收藏管理、离线下载、流媒体缓存等功能。项目采用前后端分离架构，提供
-Web、移动端（Android / iOS）、桌面端（macOS / Windows / Linux）及 Apple TV 多端客户端，统一后端 API，带来一致的播放体验。
+Web、移动端（Android / iOS）、桌面端（macOS / Windows / Linux）及 Apple TV 多端客户端，统一后端 API，带来一致的播放体验。  
+开发项目初衷是改善同类型开源项目的观影体验，优化播放器播放卡顿、资源可用但播放异常的问题。
 
 ### ⚠️ 重要提醒
 
+> **写在前面**: 客户端默认采取激进的缓冲策略，对于流量和存储空间介意的朋友请自行将缓冲策略修改为HLS模式。  
 > **注意**：部署后项目为空壳项目，无内置播放源，需要自行收集配置。  
 > **免责声明**：本项目仅供学习和个人使用。使用者需自行确保遵守当地法律法规，项目不对任何资源内容负责。使用本软件所产生的一切后果由使用者自行承担。
 
 
 ---
+---
+
+## 🎥 使用演示
+
+[![使用演示](https://img.youtube.com/vi/8xCHpnP5J5E/0.jpg)](https://youtu.be/8xCHpnP5J5E)
 
 ## ✨ 功能特性
 
@@ -369,16 +376,26 @@ flutter run
 #### 方式一：拉取官方镜像运行（推荐）
 
 ```bash
+
 # 拉取镜像
 docker pull xiaosheng078/meowtv:latest
 
+## 环境准备
+# 复制默认配置文件 / 从源码获取上传
+docker run -d --name meowtv -e PUID=$(id -u) -e PGID=$(id -g) xiaosheng078/meowtv:latest && docker cp meowtv:/app/configs .
+# 清理临时容器
+docker stop meowtv && docker rm meowtv
+
 # 运行容器
+# PUID/PGID 须与宿主机用户一致；entrypoint 据此 chown 挂载目录并 gosu 降权，无需 --user
 docker run -d \
   --name meowtv \
+  -e PUID=$(id -u) \
+  -e PGID=$(id -g) \
   -p 8088:8088 \
-  -v $(pwd)/backend/configs:/app/configs:ro \
-  -v $(pwd)/backend/data:/app/data \
-  -v $(pwd)/backend/logs:/app/logs \
+  -v $(pwd)/configs:/app/configs:ro \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
   -e MEOWTV_APP_ENV=prod \
   -e MEOWTV_AUTH_JWT_SECRET=your-secret-key \
   -e MEOWTV_AUTH_ADMIN_PASSWORD=your-password \
@@ -389,12 +406,22 @@ docker run -d \
 #### 方式二：Docker Compose
 
 Docker Compose 方式见 [`scripts/backend/docker-compose.yml`](scripts/backend/docker-compose.yml)（默认使用
-`xiaosheng078/meowtv:latest` 镜像）：
+`xiaosheng078/meowtv:latest` 镜像）。该 compose 通过 `PUID`/`PGID` 环境变量指定运行用户（默认 1000:1000，
+entrypoint 据此 chown 挂载目录并 `gosu` 降权），须与宿主机用户一致：
 
 ```bash
 cd scripts/backend
+
+# 方式 A（推荐）：用部署脚本，自动传入当前用户 uid/gid
+sudo ./deploy.sh --uid $(id -u) --gid $(id -g)
+
+# 方式 B：直接 compose，需先 export PUID/PGID
+export PUID=$(id -u) PGID=$(id -g)
 docker compose up -d
 ```
+
+> ⚠️ `$(id -u)`/`$(id -g)` 必须由当前用户 shell 在 sudo 提权**前**展开为字面量。切勿写成
+> `sudo bash -c './deploy.sh --uid $(id -u) ...'`，那样会在 root shell 内展开为 0，导致容器以 root 运行。
 
 #### 方式三：自行构建
 
@@ -410,15 +437,15 @@ docker build -f scripts/backend/Dockerfile -t meowtv:latest backend/
 前端 Dockerfile 位于 [`scripts/frontend/web/Dockerfile`](scripts/frontend/web/Dockerfile)，使用 Nginx 运行静态产物。
 
 ```bash
-# 构建镜像（从项目根目录）
-docker build -f scripts/frontend/web/Dockerfile -t meowtv-web:latest frontend/
+# 拉取镜像
+docker pull xiaosheng078/meowtv-web:latest
 
 # 运行容器
 docker run -d \
   --name meowtv-web \
-  -p 80:80 \
+  -p 180:80 \
   -e API_BASE_URL=http://your-backend-host:8088 \
-  meowtv-web:latest
+  xiaosheng078/meowtv-web:latest
 ```
 
 ### 多架构构建

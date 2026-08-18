@@ -103,9 +103,7 @@ export function ResourceDropdown({ sites, selected, onChange, themeFrom, themeTo
         <div
           className="mt-2 p-3 rounded-2xl"
           style={{
-            background: "var(--bg-surface-strong)",
-            backdropFilter: "blur(24px)",
-            WebkitBackdropFilter: "blur(24px)",
+            background: "var(--bg-elevated)",
             border: "1px solid var(--border-strong)",
             boxShadow: "var(--shadow-dropdown)",
           }}

@@ -26,7 +26,7 @@ const _unset = Object();
 class AuthState {
   final bool isInitializing;
   final bool isLoggedIn;
-  final bool hasSeenDisclaimer;
+  final bool hasAcceptedAgreements;
   final String? username;
   final UserProfile? profile;
   final String? baseUrl;
@@ -34,7 +34,7 @@ class AuthState {
   const AuthState({
     this.isInitializing = true,
     this.isLoggedIn = false,
-    this.hasSeenDisclaimer = false,
+    this.hasAcceptedAgreements = false,
     this.username,
     this.profile,
     this.baseUrl,
@@ -42,7 +42,7 @@ class AuthState {
 
   /// Factory for the logged-out state, ensuring username/profile/baseUrl are
   /// explicitly cleared to null (unlike copyWith which cannot clear nullable fields).
-  const AuthState.loggedOut({this.hasSeenDisclaimer = true})
+  const AuthState.loggedOut({this.hasAcceptedAgreements = true})
       : isInitializing = false,
         isLoggedIn = false,
         username = null,
@@ -52,7 +52,7 @@ class AuthState {
   AuthState copyWith({
     bool? isInitializing,
     bool? isLoggedIn,
-    bool? hasSeenDisclaimer,
+    bool? hasAcceptedAgreements,
     Object? username = _unset,
     Object? profile = _unset,
     Object? baseUrl = _unset,
@@ -60,7 +60,7 @@ class AuthState {
       AuthState(
         isInitializing: isInitializing ?? this.isInitializing,
         isLoggedIn: isLoggedIn ?? this.isLoggedIn,
-        hasSeenDisclaimer: hasSeenDisclaimer ?? this.hasSeenDisclaimer,
+        hasAcceptedAgreements: hasAcceptedAgreements ?? this.hasAcceptedAgreements,
         username: identical(username, _unset)
             ? this.username
             : username as String?,
@@ -94,7 +94,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final token = await _storage.getAccessToken();
     final username = await _storage.read(key: 'username');
     final baseUrl = await _storage.read(key: 'server_base_url');
-    final accepted = await _storage.hasSeenDisclaimer();
+    final accepted = await _storage.hasAcceptedAgreements() &&
+        !(await _storage.needsAgreementsConfirmation());
 
     if (!mounted) return;
 
@@ -117,7 +118,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
           await _storage.removeRefreshToken();
           state = AuthState(
             isInitializing: false,
-            hasSeenDisclaimer: accepted,
+            hasAcceptedAgreements: accepted,
           );
           // Show snackbar
           final ctx = rootNavigatorKey.currentContext;
@@ -141,7 +142,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         await _storage.removeRefreshToken();
         state = AuthState(
           isInitializing: false,
-          hasSeenDisclaimer: accepted,
+          hasAcceptedAgreements: accepted,
         );
         return;
       }
@@ -154,7 +155,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
         state = state.copyWith(
           isInitializing: false,
           isLoggedIn: true,
-          hasSeenDisclaimer: accepted,
+          hasAcceptedAgreements: accepted,
           username: username,
           baseUrl: baseUrl,
         );
@@ -162,14 +163,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
     } else {
       state = AuthState(
         isInitializing: false,
-        hasSeenDisclaimer: accepted,
+        hasAcceptedAgreements: accepted,
       );
     }
   }
 
-  /// Mark disclaimer as seen (called from DisclaimerScreen).
-  void setHasSeenDisclaimer() {
-    state = state.copyWith(hasSeenDisclaimer: true);
+  /// Mark agreements as accepted (called from AgreementsScreen).
+  Future<void> setAgreementsAccepted() async {
+    await _storage.setAgreementsAccepted();
+    state = state.copyWith(hasAcceptedAgreements: true);
   }
 
   /// Login.

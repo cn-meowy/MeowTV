@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 
 /// 平台相关工具类，提供运行环境检测和设备信息获取能力。
@@ -14,6 +16,9 @@ class PlatformUtil {
 
   /// 缓存设备名称，避免重复获取。
   static String? _deviceNameCache;
+
+  /// 缓存设备身份，避免重复获取。
+  static DeviceIdentity? _identityCache;
 
   /// Apple TV 标志，由 app 启动时根据构建配置设置。
   /// 在 Apple TV 构建中，通过 --dart-define=IS_APPLE_TV=true 传入。
@@ -106,6 +111,92 @@ class PlatformUtil {
     return name;
   }
 
+  // ── 设备身份 ──────────────────────────────────────────────────────────────
+
+  /// 获取真实设备身份，用于 AirPlay 2 RTSP SETUP body 与 `/play` V2 body。
+  ///
+  /// 真实 Apple TV 会校验 SETUP body 里的 `deviceID` / `macAddress` /
+  /// `model` 等字段；之前 dart_cast 在 SETUP body 硬编码 `AA:BB:CC:DD:EE:FF`
+  /// / `iPhone14,3` 等 IEEE 未分配的假身份，导致真实 Apple TV 拒绝 SETUP
+  /// 返回 500，进而 RECORD 455、`/play` 出现 "false 200"。本方法返回真实
+  /// 平台身份（iOS / macOS / Android 各自的 model + 真实 MAC 派生），喂给
+  /// dart_cast 的 `CastMedia.senderIdentity`。
+  ///
+  /// Android 10+ (API 29+) WifiManager.getConnectionInfo().macAddress 返回
+  /// 固定的 `02:00:00:00:00:00`；device_info_plus 也无法读取真实 MAC。这里
+  /// 使用 android.id 作为稳定 ID，按 SHA-1 派生一个 Apple 段 OUI
+  /// (`00:1F:F3`) 的合法 MAC——同一台 Android 设备每次启动派生结果一致，
+  /// Apple TV 用 deviceID 做会话去重时不会因为 MAC 漂移而拒绝 SETUP。
+  static Future<DeviceIdentity> getDeviceIdentity({String? appVersion}) async {
+    if (_identityCache != null) return _identityCache!;
+
+    final deviceInfo = DeviceInfoPlugin();
+    DeviceIdentity identity;
+
+    if (Platform.isAndroid) {
+      final a = await deviceInfo.androidInfo;
+      identity = DeviceIdentity(
+        macAddress: _macFromId(a.id),
+        model: a.model,
+        osName: 'Android',
+        osVersion: a.version.release,
+        osBuildVersion:
+            '${a.version.baseOS ?? ''}/${a.version.incremental}',
+        deviceName: '${_capitalize(a.brand)} ${a.model}',
+        appVersion: appVersion ?? '0.0.0',
+        bundleId: 'tv.meow.app',
+      );
+    } else if (Platform.isIOS) {
+      final i = await deviceInfo.iosInfo;
+      identity = DeviceIdentity(
+        macAddress: _macFromId(i.identifierForVendor ?? ''),
+        model: i.utsname.machine,
+        osName: 'iPhone OS',
+        osVersion: i.systemVersion,
+        osBuildVersion: i.utsname.version,
+        deviceName: 'Apple ${i.utsname.machine}',
+        appVersion: appVersion ?? '0.0.0',
+        bundleId: 'tv.meow.app',
+      );
+    } else if (Platform.isMacOS) {
+      final m = await deviceInfo.macOsInfo;
+      identity = DeviceIdentity(
+        macAddress: _macFromId(m.systemGUID ?? ''),
+        model: m.model,
+        osName: _isAppleTV ? 'tvOS' : 'macOS',
+        osVersion: '${m.majorVersion}.${m.minorVersion}.${m.patchVersion}',
+        osBuildVersion: '',
+        deviceName: _isAppleTV ? 'Apple AppleTV' : 'Apple ${m.model}',
+        appVersion: appVersion ?? '0.0.0',
+        bundleId: 'tv.meow.app',
+      );
+    } else {
+      identity = DeviceIdentity(
+        macAddress: _macFromId(Platform.localHostname),
+        model: 'Unknown',
+        osName: Platform.operatingSystem,
+        osVersion: Platform.operatingSystemVersion,
+        osBuildVersion: '',
+        deviceName: Platform.localHostname,
+        appVersion: appVersion ?? '0.0.0',
+        bundleId: 'tv.meow.app',
+      );
+    }
+
+    _identityCache = identity;
+    return identity;
+  }
+
+  /// 把任意字符串稳定地映射成合法 MAC 格式（XX:XX:XX:XX:XX:XX，OUI 用
+  /// Apple 段 `00:1F:F3`）。
+  static String _macFromId(String id) {
+    final hash = sha1.convert(utf8.encode(id)).bytes;
+    return '00:1F:F3:${_hex(hash[0])}:${_hex(hash[1])}:${_hex(hash[2])}';
+  }
+
+  static String _hex(int b) =>
+      b.toRadixString(16).padLeft(2, '0').toUpperCase();
+
   // ── 设备类型 ─────────────────────────────────────────────────────────────
 
   /// 获取当前设备类型值（与后端 DeviceType 枚举对齐）。
@@ -194,6 +285,7 @@ class PlatformUtil {
     _isEmulatorCache = null;
     _deviceIdCache = null;
     _deviceNameCache = null;
+    _identityCache = null;
   }
 
   /// 将字符串首字母大写（用于 Android brand 如 "samsung" → "Samsung"）。
@@ -201,4 +293,45 @@ class PlatformUtil {
     if (s.isEmpty) return s;
     return s[0].toUpperCase() + s.substring(1);
   }
+}
+
+/// 设备身份，用于 AirPlay 2 RTSP SETUP body 与 `/play` V2 body。
+///
+/// Apple TV 会校验这些字段——之前 dart_cast 硬编码 IEEE 未分配的假身份
+///（`AA:BB:CC:DD:EE:FF` / `iPhone14,3` 等）会被真实 Apple TV 拒绝。
+class DeviceIdentity {
+  /// MAC 地址（XX:XX:XX:XX:XX:XX）。
+  final String macAddress;
+
+  /// 设备型号（Android: `model`；iOS/macOS: `utsname.machine`）。
+  final String model;
+
+  /// 操作系统名（`Android` / `iPhone OS` / `tvOS` / `macOS`）。
+  final String osName;
+
+  /// 操作系统版本。
+  final String osVersion;
+
+  /// 系统构建版本（`Build.DISPLAY` / `utsname.version`）。
+  final String osBuildVersion;
+
+  /// 设备显示名（`"Samsung Galaxy S24"` / `"Apple iPhone15,2"`）。
+  final String deviceName;
+
+  /// app 版本（用于 AirPlay SETUP body 的 `sourceVersion`）。
+  final String appVersion;
+
+  /// app bundle ID（用于 `/play` V2 body 的 `clientBundleID`）。
+  final String bundleId;
+
+  const DeviceIdentity({
+    required this.macAddress,
+    required this.model,
+    required this.osName,
+    required this.osVersion,
+    required this.osBuildVersion,
+    required this.deviceName,
+    required this.appVersion,
+    required this.bundleId,
+  });
 }

@@ -15,6 +15,10 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    kotlin {
+        jvmToolchain(17)
+    }
+
     defaultConfig {
         applicationId = "cn.meowy.meowtv"
         minSdk = 24

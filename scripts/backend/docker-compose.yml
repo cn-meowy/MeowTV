@@ -18,6 +18,11 @@ services:
     container_name: meowtv
     restart: unless-stopped
 
+    # 权限模型: 容器以 root 启动 entrypoint，由 entrypoint chown 挂载目录后
+    # gosu 降权到 PUID:PGID 运行主程序（不再使用 user: 指令）。
+    # PUID/PGID 通过下方 environment 传入，须与宿主机 bind mount 目录属主一致。
+    # 不设默认值：不经 deploy.sh 直接 "docker compose up" 时需自行 export PUID/PGID，否则回退 1000:1000
+
     # 构建配置（当镜像不存在时从 Dockerfile 构建）
     build:
       context: ../../backend/
@@ -28,6 +33,8 @@ services:
       - "${MEOWTV_PORT:-8088}:${MEOWTV_SERVER_PORT:-8088}"
 
     # 卷挂载（bind mount，方便直接访问文件）
+    # 注意：bind mount 保留宿主机 uid/gid；entrypoint 启动时会将这两个目录
+    #       chown 到 PUID:PGID（见 environment），因此首次部署无需手动预创建/chown
     volumes:
       # 配置文件目录
       - ../../backend/configs:/app/configs:ro
@@ -38,6 +45,9 @@ services:
 
     # 环境变量配置
     environment:
+      # 运行用户 UID/GID（entrypoint 据此 chown 挂载目录并 gosu 降权，须与宿主机用户一致）
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       # 应用环境: dev | prod
       - MEOWTV_APP_ENV=${MEOWTV_ENV:-prod}
       # 调试模式（生产环境应关闭）

@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/theme/app_theme.dart';
 import '../../shared/models/search_result.dart';
 import '../../features/favorites/favorite_toggle_provider.dart';
+import 'marquee_text.dart';
 
 /// Helper: first non-null/non-empty value of a field among items.
 T? _firstOf<T>(List<SearchResultItem> items, T? Function(SearchResultItem) selector) {
@@ -260,8 +261,8 @@ class _NameGroupedCardState extends ConsumerState<NameGroupedCard> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        first.title,
+                      MarqueeText(
+                        text: first.title,
                         style: TextStyle(
                             color: Colors.white,
                             fontSize: 13,
@@ -269,8 +270,7 @@ class _NameGroupedCardState extends ConsumerState<NameGroupedCard> {
                             shadows: [
                               Shadow(color: Colors.black.withValues(alpha: 0.7), blurRadius: 4),
                             ]),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                        staticMaxLines: 2,
                       ),
                       const SizedBox(height: 4),
                       // Meta line: year / type / area

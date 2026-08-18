@@ -70,12 +70,12 @@ func main() {
 	if err := db.AutoMigrate(
 		&entity.User{}, &entity.SysConfig{}, &entity.UserGroup{}, &entity.UserGroupResource{},
 		&entity.SearchHistory{}, &entity.PlayHistory{}, &entity.Favorite{},
-		&entity.DownloadTask{}, &entity.DoubanRank{},
+		&entity.DownloadTask{}, &entity.DoubanRank{}, &entity.LocalVideo{},
 	); err != nil {
 		slog.Error("failed to auto-migrate", "error", err)
 		os.Exit(1)
 	}
-	migration.SeedSysConfig(db)
+	migration.SeedSysConfig(db, cfg.Demo.LocalDataDir != "")
 
 	// Seed admin user if not exists
 	var count int64
@@ -107,6 +107,14 @@ func main() {
 	if err != nil {
 		slog.Error("failed to initialize app", "error", err)
 		os.Exit(1)
+	}
+
+	// 6.5. Demo 模式：扫描本地影视数据目录并入库（Apple Store 审核演示）
+	if app.LocalDataService != nil && app.LocalDataService.IsDemoMode() {
+		slog.Info("demo mode enabled, scanning local data directory", "dir", cfg.Demo.LocalDataDir)
+		if err := app.LocalDataService.ScanAndSeed(context.Background()); err != nil {
+			slog.Error("failed to scan demo data", "error", err)
+		}
 	}
 
 	// 7. Register config change callbacks

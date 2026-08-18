@@ -15,7 +15,7 @@ import {ResourceSwitcher} from "@/app/components/ResourceSwitcher";
 import {PlayHistoryPanel} from "@/app/components/PlayHistoryPanel";
 import {DownloadEpisodeDialog} from "@/app/components/DownloadEpisodeDialog";
 import {getResourceDetail, parsePlaySources, getCachedGroupData} from "@/api/search";
-import {checkDownload, getDownloadFileUrl} from "@/api/download";
+import {checkDownload, buildDownloadFileUrlWithToken, appendTempToken} from "@/api/download";
 import {getPlayHistory} from "@/api/user-data";
 import {usePlayHistory} from "@/hooks/usePlayHistory";
 import {usePlayProgress} from "@/hooks/usePlayProgress";
@@ -78,6 +78,10 @@ export default function PlayPage() {
     const [bufferedAheadCount, setBufferedAheadCount] = useState(0);
     // 代理 URL（异步获取 tempToken 后拼接）
     const [proxyUrl, setProxyUrl] = useState<string | null>(null);
+    // demo 模式：remoteUrl 为 /api/download/file/ 开头时，异步追加 tempToken 后的播放 URL
+    const [remoteFileTokenUrl, setRemoteFileTokenUrl] = useState<string | null>(null);
+    // remoteFileTokenUrl 的请求序列号，防止过期请求覆盖
+    const remoteFileTokenSeqRef = useRef(0);
 
     // ====== m3u8 链接检测 ======
     const m3u8Check = useM3u8Check();
@@ -108,7 +112,12 @@ export default function PlayPage() {
     const remoteUrl = currentEpisode?.url || "";
     const episodeName = currentEpisode?.name || "";
     // 本地文件优先；检查中时暂不使用远程 URL，避免先播放远程再切换本地的闪烁
-    const rawPlayUrl = localFileUrl || (checkingLocal ? "" : remoteUrl);
+    // demo 模式下 remoteUrl 为 /api/download/file/ 开头，需等待 tempToken 追加完成
+    // （remoteFileTokenUrl 就绪前用空串，避免无 token 的 URL 触发 401）
+    const isDemoRemoteFile = !!remoteUrl && remoteUrl.startsWith('/api/download/file/');
+    const rawPlayUrl = localFileUrl
+        || (checkingLocal ? ""
+            : (isDemoRemoteFile ? (remoteFileTokenUrl || "") : remoteUrl));
     // 流代理：如果是 m3u8 且代理开启，则使用代理 URL（需异步获取 tempToken）
     const useProxy = streamConfig?.enabled && isM3u8Url(remoteUrl) && !localFileUrl;
     const playUrl = useProxy ? (proxyUrl || "") : rawPlayUrl;
@@ -459,6 +468,23 @@ export default function PlayPage() {
         return () => { cancelled = true; };
     }, [useProxy, remoteUrl]);
 
+    // demo 模式：remoteUrl 为 /api/download/file/ 开头时，异步追加 tempToken
+    // /api/download/file/:id 改用 TempTokenAuth（query token），video.src 无法带 header
+    useEffect(() => {
+        if (!remoteUrl || !remoteUrl.startsWith('/api/download/file/')) {
+            setRemoteFileTokenUrl(null);
+            return;
+        }
+        const seq = ++remoteFileTokenSeqRef.current;
+        appendTempToken(remoteUrl).then((url) => {
+            if (seq === remoteFileTokenSeqRef.current) setRemoteFileTokenUrl(url);
+        }).catch((err) => {
+            console.error('[PlayPage] Failed to append tempToken to remote file URL:', err);
+            if (seq === remoteFileTokenSeqRef.current) setRemoteFileTokenUrl(null);
+        });
+        return () => { /* seq 机制保证过期请求不覆盖 */ };
+    }, [remoteUrl]);
+
     const fetchDetail = useCallback(async (domain: string, vodId: number | undefined) => {
         if (!domain || !vodId) {
             setError("缺少资源站点或视频ID");
@@ -528,7 +554,15 @@ export default function PlayPage() {
             if (seq !== checkDownloadSeqRef.current) return;
             if (resp.found && resp.task_id > 0 && resp.file_format === 'mp4') {
                 console.log('[PlayPage] 本地 MP4 文件已找到, task_id:', resp.task_id);
-                setLocalFileUrl(getDownloadFileUrl(resp.task_id));
+                // 异步获取带 tempToken 的播放 URL（/api/download/file/:id 改用 tempToken 认证）
+                buildDownloadFileUrlWithToken(resp.task_id).then((url) => {
+                    if (seq !== checkDownloadSeqRef.current) return;
+                    setLocalFileUrl(url);
+                }).catch((err) => {
+                    if (seq !== checkDownloadSeqRef.current) return;
+                    console.error('[PlayPage] 构建本地文件 URL 失败:', err);
+                    setLocalFileUrl(null);
+                });
                 setLocalFileFormat('mp4');
             } else if (resp.found && resp.file_format === 'ts') {
                 console.log('[PlayPage] 本地文件为 TS 格式，回退远程流, task_id:', resp.task_id);

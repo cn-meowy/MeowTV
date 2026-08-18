@@ -54,12 +54,15 @@ flowchart LR
   - `ca-certificates` —— HTTPS 请求证书
   - `tzdata` —— 时区数据
   - `curl` —— 健康检查
+  - `gosu` —— 入口点降权执行主程序（比 su/sudo 更安全）
 - 时区与语言：`TZ=Asia/Shanghai`、`LC_ALL=C.UTF-8`、`LANG=C.UTF-8`
 
 ### 安全特性
 
-- 创建非 root 用户 `meowtv`（UID 1000 / GID 1000）运行容器，降低提权风险
+- 创建非 root 用户 `meowtv`（UID 1000 / GID 1000），主程序经 `gosu` 降权后以该用户运行，降低提权风险
 - 工作目录 `/app`，数据目录 `/app/data`、日志目录 `/app/logs` 均归 `meowtv` 用户所有
+- **权限模型**：容器以 root 启动入口点脚本 `docker-entrypoint.sh`，由其将挂载目录 `chown` 到 `PUID:PGID` 后，再用 `gosu` 降权执行主程序。这样无论宿主机用户 uid/gid 为何（如 macOS 常为 501:80），entrypoint 都会自动修正挂载目录属主，无需手动预创建或 `chown` 宿主机目录
+- 通过 `PUID`/`PGID` 环境变量指定运行用户（默认 1000:1000），须与宿主机用户一致
 
 ### 健康检查
 
@@ -93,6 +96,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 | `MEOWTV_DB_DRIVER` | `sqlite` | 数据库驱动（sqlite / mysql / postgres） |
 | `MEOWTV_CACHE_TYPE` | `gocache` | 缓存类型 |
 | `MEOWTV_LOG_DIR` | `/app/logs` | 日志输出目录 |
+| `PUID` | `1000` | 运行用户 UID（entrypoint 据此 chown 挂载目录并降权） |
+| `PGID` | `1000` | 运行用户 GID（entrypoint 据此 chown 挂载目录并降权） |
 
 > 完整环境变量与配置加载优先级见 [`backend/configs/app.example.yaml`](../backend/configs/app.example.yaml) 与 [`README.md`](../README.md#-配置说明)。
 
@@ -117,8 +122,12 @@ docker buildx build \
 docker pull xiaosheng078/meowtv:latest
 
 # 运行容器
+# PUID/PGID 须与宿主机用户一致；entrypoint 据此 chown 挂载目录并 gosu 降权
+# $(id -u):$(id -g) 在当前用户 shell 展开为字面量，无需 --user
 docker run -d \
   --name meowtv \
+  -e PUID=$(id -u) \
+  -e PGID=$(id -g) \
   -p 8088:8088 \
   -v $(pwd)/backend/configs:/app/configs:ro \
   -v $(pwd)/backend/data:/app/data \
@@ -137,6 +146,13 @@ docker run -d \
 ```bash
 cd scripts/backend
 docker compose up -d
+```
+
+> 该 compose 文件通过 `PUID`/`PGID` 环境变量指定运行用户（默认 1000:1000，entrypoint 据此 chown 挂载目录并 `gosu` 降权）。直接 `docker compose up` 前建议先 `export PUID=$(id -u) PGID=$(id -g)` 以匹配宿主机用户；未设置时回退 1000:1000。推荐改用部署脚本：
+
+```bash
+cd scripts/backend
+sudo ./deploy.sh --uid $(id -u) --gid $(id -g)
 ```
 
 辅助脚本：

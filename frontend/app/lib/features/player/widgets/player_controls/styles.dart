@@ -80,6 +80,9 @@ class PlayerControlsStyles {
   /// 控制栏自动隐藏时间
   static const Duration autoHideDelay = Duration(seconds: 5);
 
+  /// 投屏期顶部滚动提示条文字移动速度（px/s）
+  static const double castBannerScrollSpeed = 30.0;
+
   /// 控制栏显示/隐藏动画时长
   static const Duration controlsAnimDuration = Duration(milliseconds: 300);
 

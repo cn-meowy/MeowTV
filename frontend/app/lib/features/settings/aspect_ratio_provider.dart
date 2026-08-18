@@ -3,7 +3,7 @@ import '../player/widgets/player_controls/aspect_ratio_panel.dart';
 
 /// 画面比例 Notifier
 class DisplayAspectRatioNotifier extends StateNotifier<DisplayAspectRatio> {
-  DisplayAspectRatioNotifier() : super(DisplayAspectRatio.ratio16_9);
+  DisplayAspectRatioNotifier() : super(DisplayAspectRatio.autoAdapt);
 
   void setRatio(DisplayAspectRatio ratio) {
     state = ratio;

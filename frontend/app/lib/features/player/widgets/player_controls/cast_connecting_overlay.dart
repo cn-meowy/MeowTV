@@ -7,6 +7,8 @@ import 'package:screen_brightness/screen_brightness.dart';
 
 import '../../playback/playback_controller.dart';
 import '../../playback/playback_provider.dart';
+import '../../../settings/buffer_mode_provider.dart';
+import '../../../../shared/models/enums.dart';
 import 'styles.dart';
 
 /// 投屏时替代视频画面的连接界面。
@@ -45,7 +47,8 @@ class _CastConnectingOverlayState extends ConsumerState<CastConnectingOverlay> {
   @override
   void initState() {
     super.initState();
-    _startHideTimer();
+    // 投屏期间控制条常驻，避免后台被系统杀掉导致 TV 播放中断。
+    // 退出投屏后由 PlayerScreen 销毁本 widget，dispose 兜底清理。
   }
 
   @override
@@ -54,16 +57,28 @@ class _CastConnectingOverlayState extends ConsumerState<CastConnectingOverlay> {
     super.dispose();
   }
 
-  void _startHideTimer() {
-    _hideTimer?.cancel();
-    _hideTimer = Timer(PlayerControlsStyles.autoHideDelay, () {
-      if (mounted) setState(() => _visible = false);
-    });
+  void _toggleVisible() {
+    // 投屏态默认常驻。用户点击可临时隐藏，但 5 秒后自动重新显示，
+    // 而不是完全隐藏 —— 避免后台运行时 UI 不在视野内被系统判断闲置。
+    setState(() => _visible = !_visible);
+    if (_visible) {
+      _hideTimer?.cancel();
+    } else {
+      // 隐藏 5 秒后强制重新显示
+      _hideTimer?.cancel();
+      _hideTimer = Timer(PlayerControlsStyles.autoHideDelay, () {
+        if (mounted) setState(() => _visible = true);
+      });
+    }
   }
 
-  void _toggleVisible() {
-    setState(() => _visible = !_visible);
-    if (_visible) _startHideTimer();
+  String _bannerText(BufferMode mode) {
+    switch (mode) {
+      case BufferMode.strategyA:
+        return 'HLS 缓冲模式直连源站，若播放失败请切换至「边播边下」模式';
+      case BufferMode.strategyB:
+        return '正在通过 app 代理播放，请保持手机前台运行';
+    }
   }
 
   // ─── 垂直手势 ──
@@ -109,7 +124,8 @@ class _CastConnectingOverlayState extends ConsumerState<CastConnectingOverlay> {
   void _onVerticalEnd() {
     if (!mounted) return;
     setState(() { _isVolumeGesture = false; _isBrightnessGesture = false; });
-    _startHideTimer();
+    // 投屏期控制条常驻：手势结束不重新隐藏
+    _hideTimer?.cancel();
   }
 
   // ─── 水平手势 ──
@@ -132,7 +148,8 @@ class _CastConnectingOverlayState extends ConsumerState<CastConnectingOverlay> {
       pb.seekTo(pb.state.position + _seekDelta);
     }
     setState(() { _isSeeking = false; _seekDelta = Duration.zero; });
-    _startHideTimer();
+    // 投屏期控制条常驻：手势结束不重新隐藏
+    _hideTimer?.cancel();
   }
 
   String _fmt(Duration d) {
@@ -149,6 +166,7 @@ class _CastConnectingOverlayState extends ConsumerState<CastConnectingOverlay> {
     final pb = ref.watch(playbackControllerProvider);
     final state = pb.state;
     final sz = MediaQuery.of(context).size;
+    final bufferMode = ref.watch(bufferModeProvider).mode;
 
     return Container(
       color: Colors.black,
@@ -172,6 +190,21 @@ class _CastConnectingOverlayState extends ConsumerState<CastConnectingOverlay> {
           opacity: _visible ? 1.0 : 0.0,
           duration: PlayerControlsStyles.controlsAnimDuration,
           child: IgnorePointer(ignoring: !_visible, child: _panel(state, pb)),
+        ),
+        // 顶部滚动提示条（投屏期常驻，不随控件隐藏，不拦截点击）
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          child: IgnorePointer(
+            child: _ScrollingBanner(text: _bannerText(bufferMode)),
+          ),
+        ),
+        // 常驻退出投屏按钮（不随控件自动隐藏）
+        Positioned(
+          top: 16,
+          right: 16,
+          child: _buildDisconnectButton(),
         ),
       ]),
     );
@@ -292,17 +325,153 @@ class _CastConnectingOverlayState extends ConsumerState<CastConnectingOverlay> {
             ),
             const SizedBox(height: 20),
           ],
-          // 断开投屏按钮
-          TextButton(
-            onPressed: widget.onDisconnect,
-            style: TextButton.styleFrom(
-              foregroundColor: PlayerControlsStyles.textSecondary,
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-              side: BorderSide(color: PlayerControlsStyles.iconColor.withValues(alpha: 0.3)),
-            ),
-            child: const Text('断开投屏', style: TextStyle(fontSize: 14)),
-          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildDisconnectButton() {
+    return GestureDetector(
+      onTap: widget.onDisconnect,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: PlayerControlsStyles.gestureBg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: PlayerControlsStyles.iconColor.withValues(alpha: 0.3)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.cast_connected, color: PlayerControlsStyles.iconColor, size: 16),
+          const SizedBox(width: 4),
+          const Text('退出投屏', style: TextStyle(color: PlayerControlsStyles.textColor, fontSize: 12)),
+        ]),
+      ),
+    );
+  }
+}
+
+/// 投屏期顶部滚动提示条。
+///
+/// 文本超过单屏宽度时自动横向滚动（无限循环），否则静态居中显示。
+/// 使用 [SingleChildScrollView] + [ScrollController] + 周期 [Timer] 驱动，
+/// 不引入第三方 Marquee 依赖。滚动速度由 [PlayerControlsStyles.castBannerScrollSpeed] 控制。
+class _ScrollingBanner extends StatefulWidget {
+  final String text;
+
+  const _ScrollingBanner({required this.text});
+
+  @override
+  State<_ScrollingBanner> createState() => _ScrollingBannerState();
+}
+
+class _ScrollingBannerState extends State<_ScrollingBanner> {
+  final ScrollController _controller = ScrollController();
+  Timer? _timer;
+  // 文本是否需要滚动（仅在内容超宽时启动）
+  bool _needsScroll = false;
+  // 单次循环周期（一屏空白 + 文本宽度），用于回绕
+  double _loopExtent = 0.0;
+  static const _separator = '        ';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureAndStart());
+  }
+
+  @override
+  void didUpdateWidget(covariant _ScrollingBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text) {
+      // 文案变化（如用户切换缓冲模式）：重新测量并重置滚动
+      _stop();
+      if (_controller.hasClients) _controller.jumpTo(0);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _measureAndStart());
+    }
+  }
+
+  @override
+  void dispose() {
+    _stop();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _measureAndStart() {
+    if (!mounted || !_controller.hasClients) return;
+    final viewport = _controller.position.viewportDimension;
+    // 测量单段文本（含分隔符）宽度
+    final tp = TextPainter(
+      text: TextSpan(
+        text: widget.text + _separator,
+        style: const TextStyle(
+          color: PlayerControlsStyles.textColor,
+          fontSize: 13,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final segmentWidth = tp.width;
+    _needsScroll = segmentWidth > viewport;
+    if (!_needsScroll) {
+      if (mounted) setState(() {});
+      return;
+    }
+    // 循环范围：从 0 滚动到 segmentWidth（第二段起点），再回绕到 0
+    _loopExtent = segmentWidth;
+    // 约 16ms 一帧推进，步长 = 速度(px/s) * 帧间隔(s)
+    final step = PlayerControlsStyles.castBannerScrollSpeed / 60.0;
+    _timer = Timer.periodic(const Duration(milliseconds: 16), (_) {
+      if (!_controller.hasClients) return;
+      final next = _controller.offset + step;
+      if (next >= _loopExtent) {
+        _controller.jumpTo(next - _loopExtent);
+      } else {
+        _controller.jumpTo(next);
+      }
+    });
+    if (mounted) setState(() {});
+  }
+
+  void _stop() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 不滚动时静态居中显示
+    if (!_needsScroll) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        color: const Color(0x33000000),
+        alignment: Alignment.center,
+        child: Text(
+          widget.text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: PlayerControlsStyles.textColor, fontSize: 13),
+        ),
+      );
+    }
+    final segment = widget.text + _separator;
+    return Container(
+      width: double.infinity,
+      color: const Color(0x33000000),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: SingleChildScrollView(
+        controller: _controller,
+        scrollDirection: Axis.horizontal,
+        physics: const NeverScrollableScrollPhysics(),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(segment,
+              style: const TextStyle(
+                  color: PlayerControlsStyles.textColor, fontSize: 13)),
+          // 重复一次以实现无缝回绕
+          Text(segment,
+              style: const TextStyle(
+                  color: PlayerControlsStyles.textColor, fontSize: 13)),
         ]),
       ),
     );

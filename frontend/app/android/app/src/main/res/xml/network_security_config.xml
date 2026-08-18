@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- 允许 localhost 明文 HTTP（本地代理服务器 VideoCacheProxyServer 需要） -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="true">localhost</domain>
-        <domain includeSubdomains="true">127.0.0.1</domain>
-    </domain-config>
+    <!-- 全局允许明文 HTTP：投屏设备的局域网通信（AirPlay 配对/DLNA/MediaProxy）均为 HTTP cleartext -->
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
 </network-security-config>

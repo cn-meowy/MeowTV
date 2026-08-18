@@ -58,9 +58,12 @@ func InitializeApp(cfg *config.Config, db *gorm.DB) (*App, error) {
 	adminHandler := handler.NewAdminHandler(userService)
 	adminConfigHandler := handler.NewAdminConfigHandler(sysConfigService)
 	adminGroupHandler := handler.NewAdminGroupHandler(userGroupService)
-	doubanService := service.NewDoubanService(doubanClient, doubanRankService)
+	localVideoRepository := repository.NewLocalVideoRepository(db)
+	localDataDir := ProvideDemoLocalDataDir(cfg)
+	localDataService := service.NewLocalDataService(localVideoRepository, downloadRepository, sysConfigRepository, localDataDir)
+	doubanService := service.NewDoubanService(doubanClient, doubanRankService, localDataService)
 	doubanHandler := handler.NewDoubanHandler(doubanService, doubanImageService)
-	searchService := service.NewSearchService(sysConfigService, userGroupService, cacheCache)
+	searchService := service.NewSearchService(sysConfigService, userGroupService, cacheCache, localVideoRepository, localDataService)
 	resourceHandler := handler.NewResourceHandler(resourceService, searchService, resourceImageService, sysConfigService)
 	searchHistoryRepository := repository.NewSearchHistoryRepository(db)
 	searchHistoryService := service.NewSearchHistoryService(searchHistoryRepository)
@@ -98,6 +101,7 @@ func InitializeApp(cfg *config.Config, db *gorm.DB) (*App, error) {
 		ResourceImageService: resourceImageService,
 		DownloadService:      downloadService,
 		StreamService:        streamService,
+		LocalDataService:     localDataService,
 		Handlers:             handlers,
 	}
 	return app, nil

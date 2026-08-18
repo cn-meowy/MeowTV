@@ -140,6 +140,7 @@ enum SessionState {
   created,
   active,
   idle,
+  paused,
   saving,
   completed,
   expired,

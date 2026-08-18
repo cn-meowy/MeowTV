@@ -16,9 +16,13 @@ final globalChewieNotifier = ValueNotifier<ChewieController?>(null);
 /// 通过 [globalChewieNotifier] 同步到 PlaybackController。
 final playbackControllerProvider = ChangeNotifierProvider<PlaybackController>((ref) {
   final castService = ref.watch(castServiceProvider);
+  final airPlayService = ref.watch(airPlayRouteServiceProvider);
+  final layerBridge = ref.watch(airPlayVideoLayerBridgeProvider);
   final controller = PlaybackController(
     chewieNotifier: globalChewieNotifier,
     castService: castService,
+    airPlayRouteService: airPlayService,
+    airPlayVideoLayerBridge: layerBridge,
   );
   ref.onDispose(() => controller.dispose());
   return controller;

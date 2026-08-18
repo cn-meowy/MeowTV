@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../../shared/widgets/marquee_text.dart';
 import '../../cast/cast_service.dart';
 import 'styles.dart';
 
@@ -44,16 +45,15 @@ class TopBar extends StatelessWidget {
             icon: Icon(Icons.arrow_back, color: PlayerControlsStyles.iconColor, size: iconSize),
             onPressed: onBack,
           ),
-          // 标题
-          Expanded(child: Text(
-            title,
+          // 标题（超长时横向滚动，否则静态单行展示）
+          Expanded(child: MarqueeText(
+            text: title,
             style: TextStyle(
               color: PlayerControlsStyles.textColor,
               fontSize: titleFontSize,
               fontWeight: FontWeight.w500,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            staticMaxLines: 1,
           )),
           // 投屏
           IconButton(

@@ -17,6 +17,9 @@ class MainFlutterWindow: NSWindow {
     let captureRegistrar = flutterViewController.registrar(forPlugin: "CapturePlugin")
     CapturePlugin.register(with: captureRegistrar)
 
+    let airPlayRegistrar = flutterViewController.registrar(forPlugin: "AirPlayPlugin")
+    AirPlayPlugin.register(with: airPlayRegistrar)
+
     super.awakeFromNib()
   }
 }

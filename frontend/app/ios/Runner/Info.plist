@@ -70,6 +70,8 @@
     <dict>
       <key>NSAllowsLocalNetworking</key>
       <true/>
+      <key>NSAllowsArbitraryLoads</key>
+      <true/>
     </dict>
     <key>NSCameraUsageDescription</key>
     <string>MeowTV 需要使用相机扫描二维码以完成 TV 端登录</string>
@@ -83,7 +85,8 @@
     </array>
     <key>NSBonjourServices</key>
     <array>
-      <string>_dart_cast._tcp</string>
+      <string>_airplay._tcp</string>
+      <string>_googlecast._tcp</string>
     </array>
   </dict>
 </plist>

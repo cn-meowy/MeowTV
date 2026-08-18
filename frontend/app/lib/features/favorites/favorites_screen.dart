@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/network/api_client.dart';
 import '../../shared/models/user_data.dart';
+import '../../shared/widgets/marquee_text.dart';
 import '../favorites/favorites_provider.dart';
 import '../settings/douban_image_proxy_provider.dart';
 
@@ -54,7 +55,13 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
           : state.items.isEmpty
               ? Center(child: Text('暂无收藏内容', style: TextStyle(color: colors.textMuted)))
               : ListView.builder(
-                  padding: const EdgeInsets.all(AppTheme.md),
+                  // body 无 SafeArea 包裹，底部 inset 需完整计入导航栏 + 系统安全区
+                  padding: EdgeInsets.fromLTRB(
+                    AppTheme.md,
+                    AppTheme.md,
+                    AppTheme.md,
+                    AppTheme.tabBarHeight + MediaQuery.of(context).padding.bottom,
+                  ),
                   itemCount: state.items.length,
                   itemBuilder: (context, i) => _FavoriteItemCard(
                     item: state.items[i],
@@ -113,7 +120,7 @@ class _FavoriteItemCard extends ConsumerWidget {
     final proxyState = ref.watch(doubanImageProxyProvider);
     ref.read(doubanImageProxyProvider.notifier).checkAndRefresh();
     final baseUrl = ref.read(apiClientProvider).baseUrl;
-    final imageUrl = proxyState.buildImageUrl(item.vodPic, baseUrl);
+    final imageUrl = proxyState.resolveImageUrl(item.vodPic, baseUrl) ?? '';
     final headers = proxyState.httpHeadersForUrl(item.vodPic);
     return GestureDetector(
       onTap: onTap,
@@ -143,7 +150,7 @@ class _FavoriteItemCard extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(item.vodName, style: TextStyle(color: colors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+                  MarqueeText(text: item.vodName, style: TextStyle(color: colors.textPrimary, fontSize: 15, fontWeight: FontWeight.w600), staticMaxLines: 1),
                   const SizedBox(height: 4),
                   Text(item.resourceName, style: TextStyle(color: colors.textSecondary, fontSize: 13)),
                 ],
