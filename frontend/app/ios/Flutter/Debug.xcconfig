@@ -2,4 +2,6 @@
 #include "Generated.xcconfig"
 
 // 本地签名覆盖（Team ID 不入库）。文件不存在也不报错。
+// 入库默认使用完整 entitlement（含 multicast）；LocalOverrides.xcconfig 在其后可覆盖。
+CODE_SIGN_ENTITLEMENTS = Runner/Runner.entitlements
 #include? "LocalOverrides.xcconfig"

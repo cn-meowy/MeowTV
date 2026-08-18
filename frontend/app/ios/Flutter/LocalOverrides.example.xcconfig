@@ -9,3 +9,8 @@
 
 DEVELOPMENT_TEAM = 你的10位TeamID
 CODE_SIGN_STYLE = Automatic
+
+// 免费个人团队专用：免费团队无法签 Multicast Networking capability，
+// 需覆盖为无 multicast 的 entitlements 才能真机运行（代价：DLNA/SSDP 与
+// 纯 Dart mDNS 发现被 iOS 静默丢弃）。付费团队请删除此行。
+// CODE_SIGN_ENTITLEMENTS = Runner/Runner.personal.entitlements
