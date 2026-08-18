@@ -5,7 +5,11 @@
 #   阶段 1 (builder): node:22-alpine 用于构建前端
 #   阶段 2 (runtime): nginx:1.27-alpine 用于运行静态产物
 #
-# 支持 amd64 / arm64 架构（通过 TARGETARCH 自动适配）
+# 支持 amd64 / arm64 架构
+# builder 阶段固定使用 --platform=$BUILDPLATFORM（构建机原生架构）运行：
+#   前端产物为静态文件、与目标架构无关，无需模拟；
+#   且可避开 QEMU 模拟 arm64 Node/pnpm 时 SIGILL (signal 4) 崩溃的已知问题。
+# 仅 runtime 阶段按目标架构构建（QEMU 下仅 apk add，轻量可靠）。
 #
 # 构建命令（从项目根目录）:
 #   单架构: docker build -f scripts/frontend/web/Dockerfile -t meowtv-web:latest .
@@ -17,7 +21,8 @@
 # ----------------------------------------
 # 阶段 1: builder - 构建前端
 # ----------------------------------------
-FROM node:22-alpine AS builder
+# --platform=$BUILDPLATFORM: 始终以构建机原生架构运行（产物为静态文件，与目标架构无关）
+FROM --platform=$BUILDPLATFORM node:22-alpine AS builder
 
 # 安装 pnpm
 RUN corepack enable && corepack prepare pnpm@9.0.0 --activate
