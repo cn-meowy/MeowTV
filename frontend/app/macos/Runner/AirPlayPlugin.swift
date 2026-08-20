@@ -11,7 +11,7 @@ import CoreFoundation
 ///   `AVRoutePickerView`（非 `isHidden`），触发前临时把它移到窗口可见区域内
 ///   （锚定在用户点击入口附近），递归查找其内部 `NSButton` 后 `performClick`
 ///   触发；macOS 26 (Tahoe) 上按钮不可见时系统不再弹出 popover，故必须可见。
-///   popover 关闭后再把 picker 移回离屏；1s 内未出现 popover 时保持可见供手点。
+///   popover 关闭后再把 picker 移回离屏；3s 内未出现 popover 时保持可见供手点（10s 兜底自动回收）。
 /// - `isExternalPlaybackActive`: 基于 CoreAudio 输出设备 transport 类型判断
 ///   AirPlay 是否激活
 /// - `getActiveRouteName`: 返回 AirPlay 输出设备名
@@ -78,8 +78,9 @@ class AirPlayPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
     ///
     /// macOS 26 (Tahoe) 上 `AVRoutePickerButton` 不在窗口可见区域内时，
     /// `performClick` 静默失败（不弹 popover）。故触发前把常驻 picker 临时移到
-    /// 可见区内，`performClick` 后轮询 `_NSPopoverWindow`：出现后等其关闭再移回
-    /// 离屏；1s 内未出现则保持可见供用户手点（替代旧"移屏幕中央"兜底语义）。
+    /// 可见区内，`performClick` 后双信号轮询 popover（类名启发式 + 窗口集合 diff）：
+    /// 出现后等其关闭再移回离屏；3s 内未出现则保持可见供用户手点，10s 兜底自动回收。
+    /// 总时长 30s 硬上限，避免轮询定时器常驻。
     private func triggerPicker(anchorX: Double?, anchorY: Double?) -> Bool {
         NSApp.activate(ignoringOtherApps: true)
         guard let hostView = NSApp.keyWindow?.contentViewController?.view else {
@@ -141,20 +142,38 @@ class AirPlayPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         NSLog("[AirPlayPlugin] 触发常驻 picker 内部按钮 anchor=(\(targetX),\(targetY))")
         button.performClick(nil)
 
-        // 启动 popover 轮询：0.5s 间隔，最长 30s。
-        // performClick 后约 1s 内 popover 出现 → 继续轮询；消失后移回离屏停表。
-        // 1s 内未出现（其他系统版本退化）→ 停表但保持 picker 可见供手点。
+        // 启动 popover 轮询：0.25s 间隔，总时长 30s 硬上限。
+        // performClick 前快照 NSApp.windows 的 ObjectIdentifier 集合，之后任意
+        // 不在快照中的窗口视为 popover（双信号：类名启发式 + 窗口集合 diff，
+        // 跨 macOS 版本健壮）。3s 内未出现 → 兜底保持可见至 10s 后自动回收；
+        // 出现后等其关闭立即移回离屏停表。
+        let baselineWindowIDs = Set(NSApp.windows.map { ObjectIdentifier($0) })
         let startTime = Date()
         var didAppear = false
-        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] t in
+        let timer = Timer(timeInterval: 0.25, repeats: true) { [weak self] t in
             guard let self = self else { t.invalidate(); return }
             let elapsed = Date().timeIntervalSince(startTime)
             let popoverVisible = self.isPopoverWindowPresented()
+                || self.isNewWindowPresented(baseline: baselineWindowIDs)
+
+            // 30s 硬上限（兑现注释承诺，防 Timer 永生）
+            if elapsed >= 30.0 {
+                NSLog("[AirPlayPlugin] popover 轮询达 30s 上限，移回离屏 (elapsed=\(elapsed)s)")
+                self.hidePickerOffscreen()
+                t.invalidate()
+                self.popoverPollTimer = nil
+                return
+            }
 
             if popoverVisible {
                 if !didAppear {
                     didAppear = true
-                    NSLog("[AirPlayPlugin] popover 已出现 (elapsed=\(elapsed)s)")
+                    // 诊断：首次检出时记录新窗口类名，便于将来排查类名变化
+                    if let newWin = NSApp.windows.first(where: { !baselineWindowIDs.contains(ObjectIdentifier($0)) }) {
+                        NSLog("[AirPlayPlugin] popover 已出现 (elapsed=\(elapsed)s, class=\(String(describing: type(of: newWin))))")
+                    } else {
+                        NSLog("[AirPlayPlugin] popover 已出现 (elapsed=\(elapsed)s)")
+                    }
                 }
                 return
             }
@@ -168,15 +187,14 @@ class AirPlayPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                 return
             }
 
-            // 尚未出现
-            if elapsed >= 1.0 {
-                // 1s 内未出现 → 停表但保持可见供手点（替代旧"移屏幕中央"兜底）
-                NSLog("[AirPlayPlugin] popover 1s 内未出现，保持 picker 可见供手点 (elapsed=\(elapsed)s)")
+            // 尚未出现：3s 内继续轮询等待；超时后兜底保持可见至 10s 自动回收
+            if elapsed >= 10.0 {
+                NSLog("[AirPlayPlugin] popover 兜底超时，自动移回离屏 (elapsed=\(elapsed)s)")
+                self.hidePickerOffscreen()
                 t.invalidate()
                 self.popoverPollTimer = nil
                 return
             }
-            // 1s 内继续轮询等待出现
         }
         // 主队列调度，保证与 UI 线程一致
         RunLoop.main.add(timer, forMode: .common)
@@ -199,6 +217,15 @@ class AirPlayPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         for w in NSApp.windows {
             let typeName = String(describing: type(of: w))
             if typeName.contains("Popover") { return true }
+        }
+        return false
+    }
+
+    /// 窗口集合 diff 检测：是否存在 performClick 后新增的窗口（与类名无关）。
+    /// 跨 macOS 版本健壮；`NSApp.windows` 含子窗口/面板，所以 popover 也会被捕获。
+    private func isNewWindowPresented(baseline: Set<ObjectIdentifier>) -> Bool {
+        for w in NSApp.windows where !baseline.contains(ObjectIdentifier(w)) {
+            return true
         }
         return false
     }

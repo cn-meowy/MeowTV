@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>技术支持 - MeowTV</title>
+  <meta name="description" content="MeowTV 技术支持、自建影视客户端帮助与常见问题">
+  <link rel="icon" type="image/svg+xml" href="./assets/logo.svg">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="./index.html">
+        <img class="brand-logo" src="./assets/logo.svg" alt="MeowTV">
+        <span class="brand-name">MeowTV</span>
+      </a>
+      <button class="lang-toggle" type="button" aria-label="Switch to English">English</button>
+    </div>
+  </header>
+
+  <main>
+    <span hidden data-title-zh="技术支持 - MeowTV" data-title-en="Support - MeowTV"></span>
+
+    <!-- ── Chinese ── -->
+    <div class="lang-zh">
+      <h1>技术支持</h1>
+      <p class="lead">MeowTV 是一款自建影视服务器的客户端应用，配合您自己部署的 MeowTV 后端使用。</p>
+
+      <div class="card">
+        <h2 class="card-title">关于 MeowTV</h2>
+        <p>MeowTV 是一款连接用户自建 MeowTV 服务器的影视客户端，用于浏览、播放、收藏与管理您自己的影视资源。本应用不内置任何视频内容或播放源，也不提供未经授权的影视内容。</p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">联系我们</h2>
+        <p>如需帮助、反馈问题或提出建议，请通过以下邮箱联系我们：</p>
+        <a class="contact-email" href="mailto:meowycn@163.com">meowycn@163.com</a>
+      </div>
+
+      <div class="faq">
+        <h2 class="card-title">常见问题</h2>
+
+        <details>
+          <summary>应用里有自带的影视内容或片源吗？</summary>
+          <p>没有。MeowTV 不内置任何视频内容或播放源，需要您连接自己部署的 MeowTV 服务器才能使用。</p>
+        </details>
+
+        <details>
+          <summary>登录时需要提供什么信息？</summary>
+          <p>登录需要两个信息：您部署的 MeowTV 服务器地址（例如 <code>http://192.168.1.10:8080</code>），以及在该服务器上创建好的账号与密码。</p>
+        </details>
+
+        <details>
+          <summary>默认播放为什么占用很多流量 / 存储？</summary>
+          <p>客户端默认采用较为激进的缓冲策略，以换取更流畅的拖动和切换体验。如果您介意流量或本地存储占用，可以在应用的播放设置中将模式切换为 HLS（按需切片加载）。</p>
+        </details>
+
+        <details>
+          <summary>投屏 / 远程播放需要什么条件？</summary>
+          <p>投屏依赖 DLNA、AirPlay 或 Chromecast 等协议。iOS 设备首次投屏时，系统会询问是否允许"本地网络"权限，请选择允许；同时确保您的手机与投屏设备（如电视、盒子）处于同一 Wi-Fi 网络下。</p>
+        </details>
+
+        <details>
+          <summary>如何反馈问题或建议？</summary>
+          <p>请通过邮件 <a href="mailto:meowycn@163.com">meowycn@163.com</a> 与我们联系，附上设备型号、系统版本、问题描述与必要截图，我们会在工作日内尽快回复。</p>
+        </details>
+      </div>
+    </div>
+
+    <!-- ── English ── -->
+    <div class="lang-en">
+      <h1>Support</h1>
+      <p class="lead">MeowTV is a client app for self-hosted MeowTV media servers. It works together with your own MeowTV backend deployment.</p>
+
+      <div class="card">
+        <h2 class="card-title">About MeowTV</h2>
+        <p>MeowTV is a media client that connects to a self-hosted MeowTV server. It lets you browse, play, favorite, and manage your own media library. The app does not include any built-in video content or sources, and does not provide any unauthorized media content.</p>
+      </div>
+
+      <div class="card">
+        <h2 class="card-title">Contact Us</h2>
+        <p>For help, bug reports, or suggestions, please reach us by email:</p>
+        <a class="contact-email" href="mailto:meowycn@163.com">meowycn@163.com</a>
+      </div>
+
+      <div class="faq">
+        <h2 class="card-title">Frequently Asked Questions</h2>
+
+        <details>
+          <summary>Does the app include any built-in media content or sources?</summary>
+          <p>No. MeowTV does not bundle any video content or playback sources. You need to connect it to a MeowTV server that you deploy yourself.</p>
+        </details>
+
+        <details>
+          <summary>What do I need to sign in?</summary>
+          <p>You need two things: the address of the MeowTV server you deployed (for example, <code>http://192.168.1.10:8080</code>), and the account credentials you created on that server.</p>
+        </details>
+
+        <details>
+          <summary>Why does playback use a lot of bandwidth or storage by default?</summary>
+          <p>By default the client uses an aggressive buffering strategy to deliver smoother seeking and switching. If you prefer to save bandwidth or local storage, switch the playback mode to HLS (on-demand segmented streaming) in the app's playback settings.</p>
+        </details>
+
+        <details>
+          <summary>What do I need for casting or remote playback?</summary>
+          <p>Casting relies on DLNA, AirPlay, or Chromecast. On iOS the first time you cast, the system will ask for permission to access the "Local Network" — please allow it. Make sure your phone and the target device (TV, set-top box, etc.) are on the same Wi-Fi network.</p>
+        </details>
+
+        <details>
+          <summary>How can I send feedback or report an issue?</summary>
+          <p>Please email us at <a href="mailto:meowycn@163.com">meowycn@163.com</a> with your device model, OS version, a description of the issue, and any relevant screenshots. We will reply as soon as possible on business days.</p>
+        </details>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="links">
+      <a href="./index.html" class="lang-zh">技术支持</a>
+      <a href="./index.html" class="lang-en">Support</a>
+      <a href="./privacy.html" class="lang-zh">隐私政策</a>
+      <a href="./privacy.html" class="lang-en">Privacy Policy</a>
+      <a href="./terms.html" class="lang-zh">用户协议</a>
+      <a href="./terms.html" class="lang-en">Terms of Use</a>
+    </div>
+    <div>&copy; MeowTV</div>
+  </footer>
+
+  <script src="./lang.js"></script>
+</body>
+</html>

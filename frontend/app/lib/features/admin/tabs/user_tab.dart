@@ -261,14 +261,8 @@ class _UserListSubTabState extends ConsumerState<_UserListSubTab> {
                     password: passwordCtrl.text,
                     nickname: nicknameCtrl.text,
                     role: role,
+                    groupId: groupId,
                   );
-                  // 创建用户成功后，设置用户组
-                  if (ok && groupId != null) {
-                    await ref.read(adminProvider.notifier).setUserGroup(
-                      userId: ref.read(adminProvider).userPage?.items.last.id ?? 0,
-                      groupId: groupId!,
-                    );
-                  }
                   if (ctx.mounted) {
                     Navigator.pop(ctx);
                     _showSnack(ok ? '用户创建成功' : '创建失败', ok ? colors.success : colors.error);

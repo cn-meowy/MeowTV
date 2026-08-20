@@ -77,7 +77,13 @@ dependencies:
   xml: ^6.5.0
 
   # Save to gallery
-  gal: ^2.3.0
+  # 上游 gal 2.3.3 的 darwin SPM 包声明 .macOS("11.0")，而 flutter pub get 生成的
+  # FlutterGeneratedPluginSwiftPackage 清单固定 .macOS("10.15")（flutter/flutter#186804，
+  # pub get 不做 updateMinimumDeployment），Xcode 直接构建必报 gal 平台错误。
+  # 使用本地补丁版本将 macOS 声明降为 10.15（Swift 源码全部有 #available 守卫，
+  # App 部署目标 11.0），见 third_party/gal/LOCAL_PATCHES.md。
+  gal:
+    path: ./third_party/gal
 
   # Share functionality
   share_plus: ^13.2.1
@@ -86,7 +92,13 @@ dependencies:
   # NOTE: 原 ffmpeg_kit_flutter 6.0.3 的 arthenica/ffmpeg-kit 仓库已归档，
   # GitHub Release 上的 xcframework 预编译包全部 404，导致 iOS/macOS pod install 失败。
   # 替换为社区维护 fork ffmpeg_kit_flutter_new，Dart API 完全兼容，二进制源指向新仓库。
-  ffmpeg_kit_flutter_new: ^4.5.1
+  # 上游 4.6.2 的 SPM 清单声明 .iOS("14.0")，而 flutter pub get 生成的
+  # FlutterGeneratedPluginSwiftPackage 清单固定 .iOS("13.0")（flutter/flutter#186804，
+  # pub get 不做 updateMinimumDeployment），Xcode 直接构建必报 ffmpeg 平台错误。
+  # 使用本地补丁版本将 iOS 声明降为 13.0（预编译二进制 + 薄 ObjC 桥接，无版本门控 API，
+  # App 部署目标 14.0），见 third_party/ffmpeg_kit_flutter_new/LOCAL_PATCHES.md。
+  ffmpeg_kit_flutter_new:
+    path: ./third_party/ffmpeg_kit_flutter_new
 
 dev_dependencies:
   flutter_test:

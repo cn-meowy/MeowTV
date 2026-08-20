@@ -1,0 +1,42 @@
+name: gal
+description: Flutter plugin to save images/videos to photos gallery with permission handling
+version: 2.3.3-local
+homepage: https://pub.dev/packages/gal
+repository: https://github.com/natsuk4ze/gal
+documentation: https://github.com/natsuk4ze/gal/wiki
+funding: 
+ - https://github.com/sponsors/natsuk4ze
+
+topics:
+ - gallery
+ - video
+ - image
+ - photos
+ - util
+
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: '>=3.7.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_lints: ">=4.0.0 <7.0.0"
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: studio.midoridesign.gal
+        pluginClass: GalPlugin
+      ios:
+        pluginClass: GalPlugin
+        sharedDarwinSource: true
+      macos:
+        pluginClass: GalPlugin
+        sharedDarwinSource: true
+      windows:
+        pluginClass: GalPluginCApi

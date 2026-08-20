@@ -12,11 +12,9 @@
 //   或者终端运行：security find-identity -v -p codesigning
 // ============================================================
 
-// 留空表示本地开发不使用开发者证书签名
-DEVELOPMENT_TEAM =
+// Apple Developer Team ID（开发签名 / Apple Development 证书）
+DEVELOPMENT_TEAM = TEAM_ID_XXXXXXXXX
 
-// 使用 ad-hoc 签名（本地调试）
-// CODE_SIGN_IDENTITY = "-" 表示使用 ad-hoc 签名，不需要开发者证书
-// Xcode 会自动对 app 和所有 embedded frameworks 执行 ad-hoc 签名
-CODE_SIGN_IDENTITY = -
+// 不显式设置 CODE_SIGN_IDENTITY，让 Xcode 根据 DEVELOPMENT_TEAM 自动选择
+// Apple Development 证书进行自动签名（CODE_SIGN_STYLE = Automatic）。
 CODE_SIGN_STYLE = Automatic

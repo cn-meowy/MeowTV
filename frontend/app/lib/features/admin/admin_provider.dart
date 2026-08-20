@@ -193,8 +193,8 @@ class AdminNotifier extends StateNotifier<AdminState> {
     finally { if (mounted) state = state.copyWith(loading: false); }
   }
 
-  Future<bool> createUser({required String username, required String password, required String nickname, required int role}) async {
-    try { await _api.post(ApiConstants.adminUserCreate, data: {'username': username, 'password': password, 'nickname': nickname, 'role': role}); await fetchUserList(); return true; }
+  Future<bool> createUser({required String username, required String password, required String nickname, required int role, int? groupId}) async {
+    try { await _api.post(ApiConstants.adminUserCreate, data: {'username': username, 'password': password, 'nickname': nickname, 'role': role, if (groupId != null) 'group_id': groupId}); await fetchUserList(); return true; } // ignore: use_null_aware_elements
     catch (e) { appLogger.e('创建用户失败', error: e); return false; }
   }
 
