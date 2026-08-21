@@ -10,10 +10,6 @@
 	<true/>
 	<key>com.apple.security.network.client</key>
 	<true/>
-	<key>com.apple.security.assets.pictures.read-write</key>
-	<true/>
-	<key>com.apple.security.assets.movies.read-write</key>
-	<true/>
 	<!-- Uncomment keychain-access-groups when using a Developer certificate for signing.
 	     This is required by flutter_secure_storage on macOS to access the Keychain.
 	     When using ad-hoc signing (CODE_SIGN_IDENTITY = "-"), keep this commented out. -->
