@@ -57,12 +57,12 @@ class UserAgreementScreen extends StatelessWidget {
 
 五、服务变更
 
-1. MeowTV 保留随时修改或终止服务的权利。
+1. PurrTV 保留随时修改或终止服务的权利。
 2. 服务变更将不再另行通知。
 
 六、其他
 
-1. 本协议的解释权归 MeowTV 所有。
+1. 本协议的解释权归 PurrTV 所有。
 2. 如本协议的任何条款被认定为无效，不影响其他条款的效力。
 3. 使用本应用即表示您已阅读并同意本协议及《隐私政策》。
 

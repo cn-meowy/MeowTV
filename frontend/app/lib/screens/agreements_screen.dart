@@ -37,7 +37,7 @@ class AgreementsScreen extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '欢迎使用 MeowTV！在使用本应用前，请您仔细阅读并同意以下协议。'
+                        '欢迎使用 PurrTV！在使用本应用前，请您仔细阅读并同意以下协议。'
                         '点击"同意并继续"即表示您已阅读并同意以下协议的全部内容。',
                         style: TextStyle(
                           fontSize: 14,

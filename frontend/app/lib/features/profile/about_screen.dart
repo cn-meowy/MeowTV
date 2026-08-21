@@ -71,7 +71,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                'MeowTV',
+                'PurrTV',
                 style: TextStyle(
                   color: colors.textPrimary,
                   fontSize: 24,
@@ -109,7 +109,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                     _InfoTile(
                       icon: Icons.person_outline,
                       title: '开发者',
-                      value: 'MeowTV Team',
+                      value: 'PurrTV Team',
                     ),
                   ],
                 ),
@@ -131,7 +131,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                       onTap: () {
                         showLicensePage(
                           context: context,
-                          applicationName: 'MeowTV',
+                          applicationName: 'PurrTV',
                           applicationVersion: 'v$_version',
                           applicationIcon: Icon(Icons.play_circle_fill, color: colors.primary, size: 48),
                         );
@@ -144,7 +144,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
 
               // Footer
               Text(
-                'Made with ❤️ by MeowTV Team',
+                'Made with ❤️ by PurrTV Team',
                 style: TextStyle(color: colors.textMuted, fontSize: 12),
               ),
             ],

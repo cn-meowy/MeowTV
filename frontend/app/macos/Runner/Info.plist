@@ -36,11 +36,11 @@
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>MeowTV 需要访问相册以保存截图、录制视频和 GIF 动图</string>
+	<string>PurrTV 需要访问相册以保存截图、录制视频和 GIF 动图</string>
 	<key>NSLocalNetworkUsageDescription</key>
-    <string>MeowTV 需要访问本地网络以发现投屏设备</string>
+    <string>PurrTV 需要访问本地网络以发现投屏设备</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>MeowTV 需要访问相册以保存截图和录制视频</string>
+    <string>PurrTV 需要访问相册以保存截图和录制视频</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>

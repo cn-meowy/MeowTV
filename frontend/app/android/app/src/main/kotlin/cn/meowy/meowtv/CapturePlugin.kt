@@ -235,7 +235,7 @@ class CapturePlugin : MethodChannel.MethodCallHandler {
             }
 
             virtualDisplay = mediaProjection?.createVirtualDisplay(
-                "MeowTV Recording",
+                "PurrTV Recording",
                 recordWidth, recordHeight, metrics.densityDpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 surface, null, null

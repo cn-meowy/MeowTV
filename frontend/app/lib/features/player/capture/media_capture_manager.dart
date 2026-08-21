@@ -374,7 +374,7 @@ class MediaCaptureManager extends ChangeNotifier {
         appLogger.i('[Capture] $label已保存到相册');
         return true;
       case SaveResult.accessDenied:
-        lastError = '保存$label失败：相册权限未授予，请在系统设置中允许 MeowTV 访问相册';
+        lastError = '保存$label失败：相册权限未授予，请在系统设置中允许 PurrTV 访问相册';
         notifyListeners();
         return false;
       case SaveResult.failed:

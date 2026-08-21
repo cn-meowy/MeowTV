@@ -84,11 +84,11 @@ class StartScreen extends StatelessWidget {
                           ),
                         ],
                       ),
-                      child: Text('MeowTV', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: colors.textPrimary)),
+                      child: Text('PurrTV', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, color: colors.textPrimary)),
                     ),
                     const SizedBox(height: 32),
                     Text(
-                      'MeowTV',
+                      'PurrTV',
                       style: TextStyle(
                         fontSize: 42,
                         fontWeight: FontWeight.w800,

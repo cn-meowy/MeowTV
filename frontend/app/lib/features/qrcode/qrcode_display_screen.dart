@@ -158,7 +158,7 @@ class _QRCodeDisplayScreenState extends ConsumerState<QRCodeDisplayScreen> {
         ),
         const SizedBox(height: 24),
         Text(
-          '请使用手机端 MeowTV 扫码\n或在手机端输入登录码',
+          '请使用手机端 PurrTV 扫码\n或在手机端输入登录码',
           style: TextStyle(color: colors.textSecondary, fontSize: 14),
           textAlign: TextAlign.center,
         ),

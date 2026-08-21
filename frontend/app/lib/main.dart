@@ -83,7 +83,7 @@ class _MeowTVAppState extends ConsumerState<MeowTVApp> {
     ));
 
     return MaterialApp.router(
-      title: 'MeowTV',
+      title: 'PurrTV',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,

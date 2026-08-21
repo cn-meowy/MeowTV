@@ -180,7 +180,7 @@ class _CastPanelState extends ConsumerState<CastPanel> {
                     if (Platform.isIOS && service.lastDiscoveryAllFailed) ...[
                       SizedBox(height: PlayerControlsStyles.scaledPadding(7, scale)),
                       Text(
-                        '如未发现设备，请到 iOS 设置 → MeowTV → 本地网络 中允许',
+                        '如未发现设备，请到 iOS 设置 → PurrTV → 本地网络 中允许',
                         textAlign: TextAlign.center,
                         style: TextStyle(color: PlayerControlsStyles.textSecondary, fontSize: PlayerControlsStyles.scaledFontSize(9, scale)),
                       ),

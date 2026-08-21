@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>MeowTV</string>
+	<string>PurrTV</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>MeowTV</string>
+	<string>PurrTV</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -41,13 +41,13 @@
 		<string>_googlecast._tcp</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>MeowTV 需要使用相机扫描二维码以完成 TV 端登录</string>
+	<string>PurrTV 需要使用相机扫描二维码以完成 TV 端登录</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>MeowTV 需要访问本地网络以发现投屏设备</string>
+	<string>PurrTV 需要访问本地网络以发现投屏设备</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>MeowTV 需要访问相册以保存截图和录制视频</string>
+	<string>PurrTV 需要访问相册以保存截图和录制视频</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-    <string>MeowTV 需要访问相册用于选择图片（本App实际不使用相册，第三方SDK依赖）</string>
+    <string>PurrTV 需要访问相册用于选择图片（本App实际不使用相册，第三方SDK依赖）</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

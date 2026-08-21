@@ -51,7 +51,7 @@ class MediaSaveService {
       return SaveResult.accessDenied;
     }
     try {
-      await Gal.putImageBytes(imageData, album: album ?? 'MeowTV');
+      await Gal.putImageBytes(imageData, album: album ?? 'PurrTV');
       appLogger.i('[MediaSave] 图片已保存到相册');
       return SaveResult.success;
     } catch (e) {
@@ -68,7 +68,7 @@ class MediaSaveService {
       return SaveResult.accessDenied;
     }
     try {
-      await Gal.putVideo(filePath, album: album ?? 'MeowTV');
+      await Gal.putVideo(filePath, album: album ?? 'PurrTV');
       appLogger.i('[MediaSave] 视频已保存到相册');
       return SaveResult.success;
     } catch (e) {
@@ -85,7 +85,7 @@ class MediaSaveService {
       return SaveResult.accessDenied;
     }
     try {
-      await Gal.putVideo(filePath, album: album ?? 'MeowTV');
+      await Gal.putVideo(filePath, album: album ?? 'PurrTV');
       appLogger.i('[MediaSave] GIF 已保存到相册');
       return SaveResult.success;
     } catch (e) {
@@ -102,7 +102,7 @@ class MediaSaveService {
       await file.writeAsBytes(imageData);
       await SharePlus.instance.share(ShareParams(
         files: [XFile(file.path)],
-        text: 'MeowTV 截图',
+        text: 'PurrTV 截图',
       ));
     } catch (e) {
       appLogger.e('[MediaSave] 分享图片失败', error: e);
@@ -114,7 +114,7 @@ class MediaSaveService {
     try {
       await SharePlus.instance.share(ShareParams(
         files: [XFile(filePath)],
-        text: 'MeowTV 录制',
+        text: 'PurrTV 录制',
       ));
     } catch (e) {
       appLogger.e('[MediaSave] 分享视频失败', error: e);
@@ -126,7 +126,7 @@ class MediaSaveService {
     try {
       await SharePlus.instance.share(ShareParams(
         files: [XFile(filePath)],
-        text: 'MeowTV GIF',
+        text: 'PurrTV GIF',
       ));
     } catch (e) {
       appLogger.e('[MediaSave] 分享 GIF 失败', error: e);
